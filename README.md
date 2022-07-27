@@ -10,26 +10,24 @@ This plugin implements the `nav2_core::Controller` interface allowing it to be u
 ## Configuration
 
 * **Trajectorizer**
-| Parameter | Description | 
-|-----|----|
-| `omnidirectional` | Whether to consider a omnidirectional robor or a differential |
-| `desired_linear_vel` | The desired maximum linear velocity to use. |
-| `lookahead_dist` | The lookahead distance to use to find the lookahead point |
-| `max_angular_vel` | Maximum allowable angular velocity |
-| `transform_tolerance` | The TF transform tolerance |
-| `base_frame` | The frame of the robot (*base_link* by default) |
-| `time_step` | The time (seconds) to project the robot movement for each step |
+
+  * `omnidirectional`  Whether to consider a omnidirectional robor or a differential 
+  * `desired_linear_vel`  The desired maximum linear velocity to use 
+  * `lookahead_dist`  The lookahead distance to use to find the lookahead point 
+  * `max_angular_vel`  Maximum allowable angular velocity 
+  *  `transform_tolerance`  The TF transform tolerance 
+  * `base_frame`  The frame of the robot (*base_link* by default) 
+  * `time_step`  The time (seconds) to project the robot movement for each step 
 
 
 * **Optimizer (Ceres)**
-| Parameter | Description | 
-|-----|----|
-| `linear_solver_type` | Solver to use (*sparse normal Cholesky* by default) |
-| `param_tol` | tolerance (*1e-15* by default) |
-| `fn_tol` |  (*1e-7* by default) |
-| `gradient_tol` | (*1e-10* by default) |
-| `max_iterations` | maximum iterations of the optimization (*100* by default) |
-| `debug_optimizer` | whether to active debugging |
+
+  * `linear_solver_type`  Solver to use (*sparse normal Cholesky* by default) 
+  * `param_tol`  tolerance (*1e-15* by default) 
+  * `fn_tol`   (*1e-7* by default) 
+  * `gradient_tol`  (*1e-10* by default) 
+  * `max_iterations`  maximum iterations of the optimization (*100* by default) 
+  * `debug_optimizer`  whether to active debugging 
 
 
 

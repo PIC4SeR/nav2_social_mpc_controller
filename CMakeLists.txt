@@ -11,6 +11,7 @@ find_package(nav2_util REQUIRED)
 find_package(angles REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(people_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2 REQUIRED)
@@ -21,6 +22,7 @@ set(CMAKE_CXX_STANDARD 17)
 nav2_package()
 
 include_directories(
+  /usr/local/include  #to find lightsfm, just in case
   include
   ${CERES_INCLUDES}
 )
@@ -29,12 +31,14 @@ set(dependencies
   angles
   rclcpp
   geometry_msgs
+  people_msgs
   nav2_costmap_2d
   pluginlib
   nav_msgs
   nav2_util
   nav2_core
   tf2
+  #lightsfm
 )
 
 set(library_name nav2_social_mpc_controller)
@@ -42,6 +46,7 @@ set(library_name nav2_social_mpc_controller)
 add_library(${library_name} SHARED
         src/path_trajectorizer.cpp
         src/social_mpc_controller.cpp
+        src/people_interface.cpp
 )
 
 target_link_libraries(${library_name} ${CERES_LIBRARIES})

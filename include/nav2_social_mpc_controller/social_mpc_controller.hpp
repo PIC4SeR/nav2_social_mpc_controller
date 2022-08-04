@@ -24,7 +24,9 @@
 #include "nav2_core/controller.hpp"
 #include "nav2_social_mpc_controller/optimizer.hpp"
 #include "nav2_social_mpc_controller/path_trajectorizer.hpp"
+#include "nav2_social_mpc_controller/people_interface.h"
 #include "nav2_util/odometry_utils.hpp"
+#include "people_msgs/msg/people.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -142,7 +144,8 @@ protected:
   //  * @param angle_to_path Angle of robot output relatie to carrot marker
   //  * @return Whether should rotate to path heading
   //  */
-  // bool shouldRotateToPath(const geometry_msgs::msg::PoseStamped &carrot_pose,
+  // bool shouldRotateToPath(const geometry_msgs::msg::PoseStamped
+  // &carrot_pose,
   //                         double &angle_to_path);
 
   // /**
@@ -195,7 +198,8 @@ protected:
   // /**
   //  * @brief apply regulation constraints to the system
   //  * @param linear_vel robot command linear velocity input
-  //  * @param dist_error error in the carrot distance and lookahead distance
+  //  * @param dist_error error in the carrot distance and lookahead
+  //  distance
   //  * @param lookahead_dist optimal lookahead distance
   //  * @param curvature curvature of path
   //  * @param speed Speed of robot
@@ -220,6 +224,7 @@ protected:
   std::string plugin_name_;
   std::unique_ptr<PathTrajectorizer> trajectorizer_;
   std::unique_ptr<Optimizer> optimizer_;
+  std::unique_ptr<PeopleInterface> people_interface_;
   OptimizerParams optimizer_params_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D *costmap_;
@@ -255,8 +260,8 @@ protected:
   // std::shared_ptr<
   //    rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>>
   //    carrot_pub_;
-  // std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
-  //    carrot_arc_pub_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
+      local_path_pub_;
 
   // OptimizerParams optimizer_params_;
 };

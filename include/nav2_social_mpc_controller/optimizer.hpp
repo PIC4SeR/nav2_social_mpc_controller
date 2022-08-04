@@ -22,6 +22,7 @@
 #include <deque>
 #include <iostream>
 #include <limits>
+#include <math.h>
 #include <memory>
 #include <queue>
 #include <utility>
@@ -30,6 +31,15 @@
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "ceres/cubic_interpolation.h"
+
+// Social Force Model
+#include <lightsfm/sfm.hpp>
+
+#include "nav2_social_mpc_controller/social_cost_function.hpp"
+
+// the agents status contain 5 values:
+// x, y, yaw, timestamp, lv, av
+// typedef Eigen::Matrix<double, 6, 1> AgentStatus;
 
 namespace nav2_social_mpc_controller {
 
@@ -49,7 +59,8 @@ struct OptimizerParams {
     // Optimizer params
     nav2_util::declare_parameter_if_not_declared(
         node, local_name + "linear_solver_type",
-        rclcpp::ParameterValue("SPARSE_NORMAL_CHOLESKY"));
+        rclcpp::ParameterValue(
+            "SPARSE_NORMAL_CHOLESKY")); // SPARSE_NORMAL_CHOLESKY //DENSE_QR
     node->get_parameter(local_name + "linear_solver_type", linear_solver_type);
     if (solver_types.find(linear_solver_type) == solver_types.end()) {
       std::stringstream valid_types_str;
@@ -145,27 +156,84 @@ public:
   }
 
   /**
-   * @brief optimizer method
-   * @param path Reference to path
-   * @param start_dir Orientation of the first pose
-   * @param end_dir Orientation of the last pose
-   * @param costmap Pointer to minimal costmap
-   * @param params parameters weights
-   * @return If smoothing was successful
+   * @brief
+   *
+   * @param path
+   * @param cmds
+   * @param people
+   * @param speed
+   * @param time_step
+   * @return true
+   * @return false
    */
-  bool optimize(std::vector<Eigen::Vector3d> &path) {
+  bool optimize(nav_msgs::msg::Path &path,
+                const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
+                const people_msgs::msg::People &people,
+                const geometry_msgs::msg::Twist &speed, const float time_step) {
     // const nav2_costmap_2d::Costmap2D *costmap,
     // const SmootherParams &params) {
     // Path has always at least 2 points
-    if (path.size() < 2) {
-      throw std::runtime_error("Optimizer: Path must have at least 2 points");
+    if (path.poses.size() < 2) {
+      // throw std::runtime_error("Optimizer: Path must have at least 2
+      // points");
+      return false;
     }
 
-    // options_.max_solver_time_in_seconds = max_time; // params.max_time;
+    std::vector<AgentStatus> init_people = people_to_status(people);
 
+    // Transform the initial solution path to a format suitable for the
+    // optimizer
+    std::vector<AgentStatus> initial_status =
+        format_to_optimize(path, cmds, speed, time_step);
+    std::vector<AgentStatus> optim_status = initial_status;
+
+    // build the problem
     ceres::Problem problem;
-    std::vector<Eigen::Vector3d> path_optim;
-    std::vector<bool> optimized;
+    ceres::LossFunction *loss_function = NULL;
+
+    // para cada punto del path inicial, añadir una costFunction (uno de los
+    // parámetros es ese punto) Después en el addResidualBlock(), añadir la cost
+    // function así como el punto actual, su anterior y su posterior.
+
+    // Set up a cost function per point into the cloud
+    for (unsigned int i = 1; i < optim_status.size() - 1; i++) {
+
+      // double si[] = {initial_status[i][0], initial_status[i][1],
+      //                initial_status[i][2], initial_status[i][3],
+      //                initial_status[i][4], initial_status[i][5]};
+      SocialCostFunction *cost_function =
+          new SocialCostFunction(initial_status[i], init_people, time_step);
+
+      double xi[] = {optim_status[i][0], optim_status[i][1],
+                     optim_status[i][2], optim_status[i][3],
+                     optim_status[i][4], optim_status[i][5]};
+      double xip[] = {optim_status[i - 1][0], optim_status[i - 1][1],
+                      optim_status[i - 1][2], optim_status[i - 1][3],
+                      optim_status[i - 1][4], optim_status[i - 1][5]};
+      double xia[] = {optim_status[i + 1][0], optim_status[i + 1][1],
+                      optim_status[i + 1][2], optim_status[i + 1][3],
+                      optim_status[i + 1][4], optim_status[i + 1][5]};
+
+      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xip,
+                               xi, xia);
+    }
+    // first and last points are constant
+    problem.SetParameterBlockConstant(optim_status.front().data());
+    // problem.SetParameterBlockConstant(status.back().data());
+
+    // solve the problem
+    ceres::Solver::Summary summary;
+    ceres::Solve(options_, &problem, &summary);
+    if (!summary.IsSolutionUsable()) {
+      return false;
+    }
+
+    // Get the solution from optim_status
+
+    return true;
+
+    // std::vector<Eigen::Vector3d> path_optim;
+    //  std::vector<bool> optimized;
     // if (buildProblem(path, costmap, params, problem, path_optim, optimized))
     // {
     // if (buildProblem(path, problem, path_optim, optimized)) {
@@ -187,11 +255,172 @@ public:
 
     // upsampleAndPopulate(path_optim, optimized, start_dir, end_dir, params,
     //                    path);
-
-    return true;
   }
 
 private:
+  std::vector<AgentStatus>
+  people_to_status(const people_msgs::msg::People &people) {
+    std::vector<AgentStatus> people_status;
+    // the agents status contain 5 values:
+    // x, y, yaw, timestamp, lv, av
+    for (auto p : people.people) {
+      double yaw = atan2(p.velocity.y, p.velocity.x);
+      double lv =
+          sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y);
+      AgentStatus st;
+      st << (double)p.position.x, (double)p.position.y, yaw, 0.0, lv,
+          (double)p.velocity.z;
+      people_status.push_back(st);
+    }
+    return people_status;
+  }
+
+  std::vector<AgentStatus>
+  format_to_optimize(nav_msgs::msg::Path &path,
+                     const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
+                     const geometry_msgs::msg::Twist &speed,
+                     const float timestep) {
+
+    // we check the timestep and the path size in order to cut the path
+    // to a maximum duration.
+    float maxtime = 5.0;
+    // t = size * timestep
+    int maxsize = (int)round(maxtime / timestep);
+    if ((int)path.poses.size() > maxsize) {
+      std::vector<geometry_msgs::msg::PoseStamped> p(
+          path.poses.begin(), (path.poses.begin() + (maxsize - 1)));
+      path.poses = p;
+    }
+
+    // double t = 0.0;
+
+    std::vector<AgentStatus> robot_status;
+    for (unsigned int i = 0; i < path.poses.size(); i++) {
+
+      // Robot
+      // x, y, yaw, t, lv, av
+      AgentStatus r;
+      r(0, 0) = path.poses[i].pose.position.x;
+      r(1, 0) = path.poses[i].pose.position.y;
+      r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
+      r(3, 0) = i; // t;
+
+      // t += timestep;
+
+      if (i == 0) {
+        // Robot vel
+        r(4, 0) = speed.linear.x;
+        r(5, 0) = speed.angular.z;
+      } else {
+        // Robot vel
+        r(4, 0) = cmds[i - 1].twist.linear.x;
+        r(5, 0) = cmds[i - 1].twist.angular.z;
+      }
+      robot_status.push_back(r);
+    }
+    return robot_status;
+  }
+
+  std::vector<std::vector<AgentStatus>>
+  format_to_optimize2(nav_msgs::msg::Path &path,
+                      const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
+                      const std::vector<sfm::Agent> &people,
+                      const geometry_msgs::msg::Twist &speed,
+                      const float timestep) {
+
+    // we check the timestep and the path size in order to cut the path
+    // to a maximum duration.
+    float maxtime = 5.0;
+    // t = size * timestep
+    int maxsize = (int)round(maxtime / timestep);
+    if ((int)path.poses.size() > maxsize) {
+      std::vector<geometry_msgs::msg::PoseStamped> p(
+          path.poses.begin(), (path.poses.begin() + (maxsize)));
+      path.poses = p;
+    }
+
+    std::vector<sfm::Agent> agents;
+
+    // robot as sfm agent
+    sfm::Agent sfmrobot;
+    sfmrobot.desiredVelocity = 0.5;
+    sfmrobot.radius = 0.4;
+    sfmrobot.id = 0;
+    agents.push_back(sfmrobot);
+
+    for (auto person : people) {
+      agents.push_back(person);
+      // for the moment we consider no more than 4 agents (robot and 3
+      // people)
+      if (agents.size() == 4)
+        break;
+    }
+
+    std::vector<std::vector<AgentStatus>> status;
+    for (unsigned int i = 0; i < path.poses.size(); i++) {
+      std::vector<AgentStatus> agentsStatus;
+
+      // Robot
+      AgentStatus r;
+      r(0, 0) = path.poses[i].pose.position.x;
+      r(1, 0) = path.poses[i].pose.position.y;
+      r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
+      r(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+
+      if (i == 0) {
+        // Robot vel
+        r(4, 0) = speed.linear.x;
+        r(5, 0) = speed.angular.z;
+        agentsStatus.push_back(r);
+        // Agents
+        for (auto p : agents) {
+          AgentStatus a;
+          a(0, 0) = p.position.getX();
+          a(1, 0) = p.position.getY();
+          a(2, 0) = p.yaw.toRadian();
+          a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+          a(4, 0) = p.linearVelocity;
+          a(5, 0) = p.angularVelocity;
+          agentsStatus.push_back(a);
+        }
+      } else {
+        // Robot vel
+        r(4, 0) = cmds[i - 1].twist.linear.x;
+        r(5, 0) = cmds[i - 1].twist.angular.z;
+        agentsStatus.push_back(r);
+
+        // robot as sfm agent
+        agents[0].position.setX(path.poses[i - 1].pose.position.x);
+        agents[0].position.setY(path.poses[i - 1].pose.position.y);
+        agents[0].yaw.fromRadian(
+            tf2::getYaw(path.poses[i - 1].pose.orientation));
+        agents[0].linearVelocity = cmds[i - 1].twist.linear.x;
+        agents[0].angularVelocity = cmds[i - 1].twist.angular.z;
+        agents[0].velocity.setX(agents[0].linearVelocity);
+
+        // Project the people movement according to the SFM
+        // Compute Social Forces
+        sfm::SFM.computeForces(agents);
+        // update agents
+        sfm::SFM.updatePosition(agents, timestep);
+
+        // we avoid agent[0] which is the robot
+        for (unsigned int j = 1; j < agents.size(); j++) {
+          AgentStatus a;
+          a(0, 0) = agents[j].position.getX();
+          a(1, 0) = agents[j].position.getY();
+          a(2, 0) = agents[j].yaw.toRadian();
+          a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+          a(4, 0) = agents[j].linearVelocity;
+          a(5, 0) = agents[j].angularVelocity;
+          agentsStatus.push_back(a);
+        }
+      }
+      status.push_back(agentsStatus);
+    }
+    return status;
+  }
+
   /**
    * @brief Build problem method
    * @param path Reference to path
@@ -343,6 +572,8 @@ private:
   //     // problem.SetParameterBlockConstant(path_optim.back().data());
   //     return true;
   //   }
+
+  // bool buildProblem(const std::vector<Eigen::Vector3d> &path,
 
   bool debug_;
   ceres::Solver::Options options_;

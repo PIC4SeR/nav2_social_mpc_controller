@@ -88,6 +88,8 @@ public:
                     const geometry_msgs::msg::PoseStamped &path_robot_pose,
                     std::vector<geometry_msgs::msg::TwistStamped> &cmds);
 
+  float inline getTimeStep() { return time_step_; }
+
 protected:
   /**
    * @brief  Compute x position based on velocity

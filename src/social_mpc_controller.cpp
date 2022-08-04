@@ -99,14 +99,17 @@ void SocialMPCController::configure(
   // Create the optimizer
   optimizer_ = std::make_unique<Optimizer>();
   optimizer_params_.get(node.get(), name);
+  optimizer_->initialize(optimizer_params_);
+
+  // people interface
+  people_interface_ = std::make_unique<PeopleInterface>(node);
 
   global_path_pub_ =
       node->create_publisher<nav_msgs::msg::Path>("robot_global_plan", 1);
   // carrot_pub_ = node->create_publisher<geometry_msgs::msg::PointStamped>(
   //    "lookahead_point", 1);
-  // carrot_arc_pub_ =
-  //    node->create_publisher<nav_msgs::msg::Path>("lookahead_collision_arc",
-  //    1);
+  local_path_pub_ =
+      node->create_publisher<nav_msgs::msg::Path>("robot_local_plan", 1);
 }
 
 void SocialMPCController::cleanup() {
@@ -115,8 +118,8 @@ void SocialMPCController::cleanup() {
               "nav2_social_mpc_controller::SocialMPCController",
               plugin_name_.c_str());
   global_path_pub_.reset();
-  // carrot_pub_.reset();
-  // carrot_arc_pub_.reset();
+  local_path_pub_.reset();
+  // people_sub_.reset();
 }
 
 void SocialMPCController::activate() {
@@ -126,8 +129,8 @@ void SocialMPCController::activate() {
               plugin_name_.c_str());
   trajectorizer_->activate();
   global_path_pub_->on_activate();
-  // carrot_pub_->on_activate();
-  // carrot_arc_pub_->on_activate();
+  local_path_pub_->on_activate();
+  // people_sub_->on_activate();
 }
 
 void SocialMPCController::deactivate() {
@@ -137,8 +140,8 @@ void SocialMPCController::deactivate() {
               plugin_name_.c_str());
   trajectorizer_->deactivate();
   global_path_pub_->on_deactivate();
-  // carrot_pub_->on_deactivate();
-  // carrot_arc_pub_->on_deactivate();
+  local_path_pub_->on_deactivate();
+  // people_sub_->on_deactivate();
 }
 
 // std::unique_ptr<geometry_msgs::msg::PointStamped>
@@ -182,9 +185,13 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   std::vector<geometry_msgs::msg::TwistStamped> cmds;
   trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
 
-  // Do the optimization stuff
-  RCLCPP_INFO(logger_, "Current speed, vx: %.2f, vz: %.2f", speed.linear.x,
-              speed.angular.z);
+  people_msgs::msg::People people = people_interface_->getPeople();
+
+  float ts = trajectorizer_->getTimeStep();
+  optimizer_->optimize(traj_path, cmds, people, speed, ts);
+
+  // RCLCPP_INFO(logger_, "Current speed, vx: %.2f, vz: %.2f", speed.linear.x,
+  //             speed.angular.z);
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;

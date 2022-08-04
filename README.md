@@ -5,6 +5,10 @@ This is a controller (local trajectory planner) for human-aware navigation based
 
 This plugin implements the `nav2_core::Controller` interface allowing it to be used across the navigation stack as a local trajectory planner in the controller server's action server (`controller_server`).
 
+## Dependencies
+
+This controller receives the people around through a topic publishing ros people_msgs.
+At the moment of this development, people_msgs were not still available to be installed from the ros-foxy package apt server. You can get the package from here: https://github.com/wg-perception/people/tree/ros2 
 
 
 ## Configuration

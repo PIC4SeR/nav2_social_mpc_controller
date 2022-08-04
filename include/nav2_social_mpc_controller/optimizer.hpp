@@ -33,7 +33,7 @@
 #include "ceres/cubic_interpolation.h"
 
 // Social Force Model
-#include <lightsfm/sfm.hpp>
+//#include <lightsfm/sfm.hpp>
 
 #include "nav2_social_mpc_controller/social_cost_function.hpp"
 
@@ -321,105 +321,105 @@ private:
     return robot_status;
   }
 
-  std::vector<std::vector<AgentStatus>>
-  format_to_optimize2(nav_msgs::msg::Path &path,
-                      const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
-                      const std::vector<sfm::Agent> &people,
-                      const geometry_msgs::msg::Twist &speed,
-                      const float timestep) {
+  // std::vector<std::vector<AgentStatus>>
+  // format_to_optimize2(nav_msgs::msg::Path &path,
+  //                     const std::vector<geometry_msgs::msg::TwistStamped>
+  //                     &cmds, const std::vector<sfm::Agent> &people, const
+  //                     geometry_msgs::msg::Twist &speed, const float timestep)
+  //                     {
 
-    // we check the timestep and the path size in order to cut the path
-    // to a maximum duration.
-    float maxtime = 5.0;
-    // t = size * timestep
-    int maxsize = (int)round(maxtime / timestep);
-    if ((int)path.poses.size() > maxsize) {
-      std::vector<geometry_msgs::msg::PoseStamped> p(
-          path.poses.begin(), (path.poses.begin() + (maxsize)));
-      path.poses = p;
-    }
+  //   // we check the timestep and the path size in order to cut the path
+  //   // to a maximum duration.
+  //   float maxtime = 5.0;
+  //   // t = size * timestep
+  //   int maxsize = (int)round(maxtime / timestep);
+  //   if ((int)path.poses.size() > maxsize) {
+  //     std::vector<geometry_msgs::msg::PoseStamped> p(
+  //         path.poses.begin(), (path.poses.begin() + (maxsize)));
+  //     path.poses = p;
+  //   }
 
-    std::vector<sfm::Agent> agents;
+  //   std::vector<sfm::Agent> agents;
 
-    // robot as sfm agent
-    sfm::Agent sfmrobot;
-    sfmrobot.desiredVelocity = 0.5;
-    sfmrobot.radius = 0.4;
-    sfmrobot.id = 0;
-    agents.push_back(sfmrobot);
+  //   // robot as sfm agent
+  //   sfm::Agent sfmrobot;
+  //   sfmrobot.desiredVelocity = 0.5;
+  //   sfmrobot.radius = 0.4;
+  //   sfmrobot.id = 0;
+  //   agents.push_back(sfmrobot);
 
-    for (auto person : people) {
-      agents.push_back(person);
-      // for the moment we consider no more than 4 agents (robot and 3
-      // people)
-      if (agents.size() == 4)
-        break;
-    }
+  //   for (auto person : people) {
+  //     agents.push_back(person);
+  //     // for the moment we consider no more than 4 agents (robot and 3
+  //     // people)
+  //     if (agents.size() == 4)
+  //       break;
+  //   }
 
-    std::vector<std::vector<AgentStatus>> status;
-    for (unsigned int i = 0; i < path.poses.size(); i++) {
-      std::vector<AgentStatus> agentsStatus;
+  //   std::vector<std::vector<AgentStatus>> status;
+  //   for (unsigned int i = 0; i < path.poses.size(); i++) {
+  //     std::vector<AgentStatus> agentsStatus;
 
-      // Robot
-      AgentStatus r;
-      r(0, 0) = path.poses[i].pose.position.x;
-      r(1, 0) = path.poses[i].pose.position.y;
-      r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
-      r(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+  //     // Robot
+  //     AgentStatus r;
+  //     r(0, 0) = path.poses[i].pose.position.x;
+  //     r(1, 0) = path.poses[i].pose.position.y;
+  //     r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
+  //     r(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
 
-      if (i == 0) {
-        // Robot vel
-        r(4, 0) = speed.linear.x;
-        r(5, 0) = speed.angular.z;
-        agentsStatus.push_back(r);
-        // Agents
-        for (auto p : agents) {
-          AgentStatus a;
-          a(0, 0) = p.position.getX();
-          a(1, 0) = p.position.getY();
-          a(2, 0) = p.yaw.toRadian();
-          a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
-          a(4, 0) = p.linearVelocity;
-          a(5, 0) = p.angularVelocity;
-          agentsStatus.push_back(a);
-        }
-      } else {
-        // Robot vel
-        r(4, 0) = cmds[i - 1].twist.linear.x;
-        r(5, 0) = cmds[i - 1].twist.angular.z;
-        agentsStatus.push_back(r);
+  //     if (i == 0) {
+  //       // Robot vel
+  //       r(4, 0) = speed.linear.x;
+  //       r(5, 0) = speed.angular.z;
+  //       agentsStatus.push_back(r);
+  //       // Agents
+  //       for (auto p : agents) {
+  //         AgentStatus a;
+  //         a(0, 0) = p.position.getX();
+  //         a(1, 0) = p.position.getY();
+  //         a(2, 0) = p.yaw.toRadian();
+  //         a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+  //         a(4, 0) = p.linearVelocity;
+  //         a(5, 0) = p.angularVelocity;
+  //         agentsStatus.push_back(a);
+  //       }
+  //     } else {
+  //       // Robot vel
+  //       r(4, 0) = cmds[i - 1].twist.linear.x;
+  //       r(5, 0) = cmds[i - 1].twist.angular.z;
+  //       agentsStatus.push_back(r);
 
-        // robot as sfm agent
-        agents[0].position.setX(path.poses[i - 1].pose.position.x);
-        agents[0].position.setY(path.poses[i - 1].pose.position.y);
-        agents[0].yaw.fromRadian(
-            tf2::getYaw(path.poses[i - 1].pose.orientation));
-        agents[0].linearVelocity = cmds[i - 1].twist.linear.x;
-        agents[0].angularVelocity = cmds[i - 1].twist.angular.z;
-        agents[0].velocity.setX(agents[0].linearVelocity);
+  //       // robot as sfm agent
+  //       agents[0].position.setX(path.poses[i - 1].pose.position.x);
+  //       agents[0].position.setY(path.poses[i - 1].pose.position.y);
+  //       agents[0].yaw.fromRadian(
+  //           tf2::getYaw(path.poses[i - 1].pose.orientation));
+  //       agents[0].linearVelocity = cmds[i - 1].twist.linear.x;
+  //       agents[0].angularVelocity = cmds[i - 1].twist.angular.z;
+  //       agents[0].velocity.setX(agents[0].linearVelocity);
 
-        // Project the people movement according to the SFM
-        // Compute Social Forces
-        sfm::SFM.computeForces(agents);
-        // update agents
-        sfm::SFM.updatePosition(agents, timestep);
+  //       // Project the people movement according to the SFM
+  //       // Compute Social Forces
+  //       sfm::SFM.computeForces(agents);
+  //       // update agents
+  //       sfm::SFM.updatePosition(agents, timestep);
 
-        // we avoid agent[0] which is the robot
-        for (unsigned int j = 1; j < agents.size(); j++) {
-          AgentStatus a;
-          a(0, 0) = agents[j].position.getX();
-          a(1, 0) = agents[j].position.getY();
-          a(2, 0) = agents[j].yaw.toRadian();
-          a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
-          a(4, 0) = agents[j].linearVelocity;
-          a(5, 0) = agents[j].angularVelocity;
-          agentsStatus.push_back(a);
-        }
-      }
-      status.push_back(agentsStatus);
-    }
-    return status;
-  }
+  //       // we avoid agent[0] which is the robot
+  //       for (unsigned int j = 1; j < agents.size(); j++) {
+  //         AgentStatus a;
+  //         a(0, 0) = agents[j].position.getX();
+  //         a(1, 0) = agents[j].position.getY();
+  //         a(2, 0) = agents[j].yaw.toRadian();
+  //         a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+  //         a(4, 0) = agents[j].linearVelocity;
+  //         a(5, 0) = agents[j].angularVelocity;
+  //         agentsStatus.push_back(a);
+  //       }
+  //     }
+  //     status.push_back(agentsStatus);
+  //   }
+  //   return status;
+  // }
 
   /**
    * @brief Build problem method

@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD 17)
 nav2_package()
 
 include_directories(
-  /usr/local/include  #to find lightsfm, just in case
+  #/usr/local/include  #to find lightsfm, just in case
   include
   ${CERES_INCLUDES}
 )

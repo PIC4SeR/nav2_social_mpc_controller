@@ -33,7 +33,7 @@
 #include "people_msgs/msg/people.hpp"
 
 // Social Force Model
-#include <lightsfm/sfm.hpp>
+//#include <lightsfm/sfm.hpp>
 
 // the agents status contain 5 values:
 // x, y, yaw, timestamp, lv, av

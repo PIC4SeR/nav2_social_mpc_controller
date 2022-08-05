@@ -318,13 +318,9 @@ protected:
       // double thetaRad = theta.toRadian();
       // double forceVelocityAmount =
       //    -std::exp(-diff.norm() / B - PW(me.params.nPrime * B * thetaRad));
-      T exponent = -diff.norm() / B -
-                   ((T)sfm_nPrime_ * B * theta) * ((T)sfm_nPrime_ * B * theta);
-      T forceVelocityAmount = -(T)std::exp(exponent);
-      // T forceVelocityAmount =
-      //     -(T)std::exp(-(T)diff.norm() / B - ((T)sfm_nPrime_ * B * theta) *
-      //                                            ((T)sfm_nPrime_ * B *
-      //                                            theta));
+      T forceVelocityAmount = -(T)ceres::exp(-(T)diff.norm() / B -
+                                             ((T)sfm_nPrime_ * B * theta) *
+                                                 ((T)sfm_nPrime_ * B * theta));
       // double forceAngleAmount =
       //     -theta.sign() *
       //     std::exp(-diff.norm() / B - PW(me.params.n * B * thetaRad));
@@ -334,8 +330,8 @@ protected:
       if (theta < (T)0)
         sign = (T)-1;
       T forceAngleAmount =
-          -sign * std::exp(-diff.norm() / B -
-                           ((T)sfm_n_ * B * theta) * ((T)sfm_n_ * B * theta));
+          -sign * ceres::exp(-(T)diff.norm() / B -
+                             ((T)sfm_n_ * B * theta) * ((T)sfm_n_ * B * theta));
       // utils::Vector2d forceVelocity =
       //     forceVelocityAmount * interactionDirection;
       Eigen::Matrix<T, 2, 1> forceVelocity =

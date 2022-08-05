@@ -193,8 +193,8 @@ protected:
 
     // Compute robot social work
     Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();
-    Eigen::Matrix<T, 6, 1> social_force = computeSocialForce(pt, agents);
-    T wr = (T)social_force.squaredNorm();
+    Eigen::Matrix<T, 2, 1> robot_sf = computeSocialForce(pt, agents);
+    T wr = (T)robot_sf.squaredNorm();
 
     // compute agents' social work provoked by the robot
     T wp = (T)0.0;
@@ -207,8 +207,8 @@ protected:
     for (unsigned int i = 0; i < original_agents_.cols(); i++) {
       Eigen::Matrix<T, 6, 1> ag;
       ag.col(0) << original_agents_.col(i).template cast<T>();
-      Eigen::Matrix<T, 2, 1> sf = computeSocialForce(ag, robot_agent);
-      wp += (T)sf.squaredNorm();
+      Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);
+      wp += (T)agent_sf.squaredNorm();
     }
     // sum the social works and multiply by the weight
     r += (T)weight * (wr + wp);

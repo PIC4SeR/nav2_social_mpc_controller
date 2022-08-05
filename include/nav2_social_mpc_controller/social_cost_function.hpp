@@ -318,9 +318,13 @@ protected:
       // double thetaRad = theta.toRadian();
       // double forceVelocityAmount =
       //    -std::exp(-diff.norm() / B - PW(me.params.nPrime * B * thetaRad));
-      T forceVelocityAmount =
-          -(T)std::exp(-(T)diff.norm() / B - ((T)sfm_nPrime_ * B * theta) *
-                                                 ((T)sfm_nPrime_ * B * theta));
+      T exponent = -diff.norm() / B -
+                   ((T)sfm_nPrime_ * B * theta) * ((T)sfm_nPrime_ * B * theta);
+      T forceVelocityAmount = -(T)std::exp(exponent);
+      // T forceVelocityAmount =
+      //     -(T)std::exp(-(T)diff.norm() / B - ((T)sfm_nPrime_ * B * theta) *
+      //                                            ((T)sfm_nPrime_ * B *
+      //                                            theta));
       // double forceAngleAmount =
       //     -theta.sign() *
       //     std::exp(-diff.norm() / B - PW(me.params.n * B * thetaRad));

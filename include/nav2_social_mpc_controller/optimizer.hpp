@@ -207,15 +207,16 @@ public:
       double xi[] = {optim_status[i][0], optim_status[i][1],
                      optim_status[i][2], optim_status[i][3],
                      optim_status[i][4], optim_status[i][5]};
-      double xip[] = {optim_status[i - 1][0], optim_status[i - 1][1],
-                      optim_status[i - 1][2], optim_status[i - 1][3],
-                      optim_status[i - 1][4], optim_status[i - 1][5]};
-      double xia[] = {optim_status[i + 1][0], optim_status[i + 1][1],
-                      optim_status[i + 1][2], optim_status[i + 1][3],
-                      optim_status[i + 1][4], optim_status[i + 1][5]};
+      // double xip[] = {optim_status[i - 1][0], optim_status[i - 1][1],
+      //                 optim_status[i - 1][2], optim_status[i - 1][3],
+      //                 optim_status[i - 1][4], optim_status[i - 1][5]};
+      // double xia[] = {optim_status[i + 1][0], optim_status[i + 1][1],
+      //                 optim_status[i + 1][2], optim_status[i + 1][3],
+      //                 optim_status[i + 1][4], optim_status[i + 1][5]};
 
-      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xip,
-                               xi, xia);
+      // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xip,
+      //                         xi, xia);
+      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xi);
     }
     // first and last points are constant
     problem.SetParameterBlockConstant(optim_status.front().data());

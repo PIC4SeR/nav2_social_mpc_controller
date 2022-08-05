@@ -149,63 +149,21 @@ public:
    */
   template <typename T>
   bool operator()(const T *const pt, T *pt_residual) const {
-    Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi(pt);
-    // Eigen::Map<const Eigen::Matrix<double, 6, 1>> xi_next(pt_next);
-    // Eigen::Map<const Eigen::Matrix<double, 6, 1>> xi_prev(pt_prev);
-    Eigen::Map<Eigen::Matrix<T, 2, 1>> residual(pt_residual);
+    // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_next(pt_next);
+    // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_prev(pt_prev);
+    Eigen::Matrix<T, 6, 1> xi = Eigen::Map<const Eigen::Matrix<T, 6, 1>>(pt);
+    // Eigen::Map<Eigen::Matrix<T, 2, 1>> residual(pt_residual);
+    Eigen::Matrix<T, 2, 1> residual =
+        Eigen::Map<Eigen::Matrix<T, 2, 1>>(pt_residual);
     residual.setZero();
-    // pt_residual->setZero();
 
-    // compute cost
-    // addDistanceResidual(distance_w_, *pt, original_status_,
-    // pt_residual->[0]); addSocialWorkResidual(socialwork_w_, *pt_prev, *pt,
-    // *pt_next, *pt_residual->[1]);
-    // addDistanceResidual(distance_w_, xi, original_status_, residual[0]);
-    // addSocialWorkResidual(socialwork_w_, xi_prev, xi, xi_next, residual[1]);
-    addDistanceResidual(distance_w_, xi, original_status_.template cast<T>(),
-                        residual[0]);
+    Eigen::Matrix<T, 6, 1> pathi_status;
+    pathi_status.col(0) << original_status_.template cast<T>();
+    addDistanceResidual(distance_w_, xi, pathi_status, residual[0]);
     addSocialWorkResidual(socialwork_w_, xi, residual[1]);
 
     return true;
   }
-  // template <typename T>
-  // bool operator()(const T *const pt_prev, const T *const pt,
-  //                 const T *const pt_next, T *pt_residual) const {
-  //   Eigen::Map<const Eigen::Matrix<double, 6, 1>> xi(pt);
-  //   Eigen::Map<const Eigen::Matrix<double, 6, 1>> xi_next(pt_next);
-  //   Eigen::Map<const Eigen::Matrix<double, 6, 1>> xi_prev(pt_prev);
-  //   Eigen::Map<Eigen::Matrix<double, 2, 1>> residual(pt_residual);
-  //   residual.setZero();
-  //   // pt_residual->setZero();
-
-  //   // compute cost
-  //   // addDistanceResidual(distance_w_, *pt, original_status_,
-  //   // pt_residual->[0]); addSocialWorkResidual(socialwork_w_, *pt_prev, *pt,
-  //   // *pt_next, *pt_residual->[1]);
-  //   addDistanceResidual(distance_w_, xi, original_status_, residual[0]);
-  //   addSocialWorkResidual(socialwork_w_, xi_prev, xi, xi_next, residual[1]);
-
-  //   return true;
-  // }
-  // template <typename T>
-  // bool operator()(const T *const pt_prev, const T *const pt,
-  //                 const T *const pt_next, T *pt_residual) const {
-  //   Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi(pt);
-  //   Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_next(pt_next);
-  //   Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_prev(pt_prev);
-  //   Eigen::Map<Eigen::Matrix<T, 2, 1>> residual(pt_residual);
-  //   residual.setZero();
-
-  //   // compute cost
-  //   addDistanceResidual<T>(distance_w_, xi, original_status_.template
-  //   cast<T>(),
-  //                          residual[0]);
-  //   addSocialWorkResidual<T>(socialwork_w_, xi_prev, xi, xi_next,
-  //   residual[1]);
-  //   // addCostResidual<T>(socialwork_w_, xi_prev, xi, xi_next, residual[1]);
-
-  //   return true;
-  // }
 
 protected:
   /**
@@ -224,14 +182,6 @@ protected:
     Eigen::Matrix<T, 2, 1> p_ori(xi_original[0], xi_original[1]);
     r += (T)weight * (p - p_ori).squaredNorm(); // objective function value
   }
-  // template <typename T>
-  // inline void
-  // addDistanceResidual(const double &weight, const Eigen::Matrix<T, 6, 1> &xi,
-  //                     const Eigen::Matrix<T, 6, 1> &xi_original, T &r) const
-  //                     {
-  //   r += (T)weight *
-  //        (xi - xi_original).squaredNorm(); // objective function value
-  // }
 
   template <typename T>
   inline void
@@ -241,19 +191,27 @@ protected:
                         // const Eigen::Matrix<double, 6, 1> &pt_next,
                         T &r) const {
 
-    Eigen::Matrix<T, 2, 1> social_force =
-        computeSocialForce(pt, original_agents_.template cast<T>());
-    double wr = social_force.squaredNorm();
-    // std::vector<Eigen::Matrix<T, 6, 1>> robot;
-    Eigen::Matrix<T, 6, 1> robot;
-    robot.push_back(pt);
-    double wp = 0.0;
-    for (unsigned int i = 0; i < original_agents_.size(); i++) {
-      Eigen::Matrix<T, 2, 1> sf =
-          computeSocialForce(original_agents_[i].template cast<T>(), robot);
-      wp += sf.squaredNorm();
+    // Compute robot social work
+    Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();
+    Eigen::Matrix<T, 6, 1> social_force = computeSocialForce(pt, agents);
+    T wr = (T)social_force.squaredNorm();
+
+    // compute agents' social work provoked by the robot
+    T wp = (T)0.0;
+    Eigen::Matrix<T, 6, 3> robot_agent;
+    robot_agent.col(0) << pt;
+    // we invalidate the other two agent
+    // by setting t to -1
+    robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;
+    robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;
+    for (unsigned int i = 0; i < original_agents_.cols(); i++) {
+      Eigen::Matrix<T, 6, 1> ag;
+      ag.col(0) << original_agents_.col(i).template cast<T>();
+      Eigen::Matrix<T, 2, 1> sf = computeSocialForce(ag, robot_agent);
+      wp += (T)sf.squaredNorm();
     }
-    r += (T)weight * ((T)wr + (T)wp);
+    // sum the social works and multiply by the weight
+    r += (T)weight * (wr + wp);
   }
 
   // /**
@@ -304,27 +262,30 @@ protected:
   // }
 
   template <typename T>
-  inline Eigen::Matrix<T, 2, 1>
-  computeSocialForce(const Eigen::Matrix<T, 6, 1> &me,
-                     const Eigen::Matrix<T, 6, ceres::DYNAMIC> &agents) const {
+  inline Eigen::Matrix<T, 2, 1> computeSocialForce(
+      const Eigen::Matrix<T, 6, 1> &me,
+      const Eigen::Matrix<T, 6, 3> &agents) const { // ceres::DYNAMIC
 
     // AgentStatus: x, y, yaw, t, lv, av
     Eigen::Matrix<T, 2, 1> meSocialforce((T)0.0, (T)0.0);
     Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]); // x,y, position vector
     // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
-    Eigen::Matrix<T, 2, 1> meVel(me[4] * cos(me[2]),
-                                 me[4] * sin(me[2])); // vx,vy, velocity vector
+    Eigen::Matrix<T, 2, 1> meVel(me[4] * (T)cos(me[2]), me[4] * (T)sin(me[2]));
 
-    // for (unsigned i = 0; i < agents.size(); i++) {
-    for (auto a : agents) {
+    for (unsigned int i = 0; i < agents.cols(); i++) {
+
+      // if time t is -1, agent is not valid
+      if (agents(3, i) == (T)-1.0)
+        continue;
 
       // utils::Vector2d diff = agents[i].position - me.position;
-      Eigen::Matrix<T, 2, 1> aPos(a[0], a[1]);
+      Eigen::Matrix<T, 2, 1> aPos(agents(0, i), agents(1, i));
       Eigen::Matrix<T, 2, 1> diff = mePos - aPos;
       // utils::Vector2d diffDirection = diff.normalized();
       Eigen::Matrix<T, 2, 1> diffDirection = diff.normalized();
       // utils::Vector2d velDiff = me.velocity - agents[i].velocity;
-      Eigen::Matrix<T, 2, 1> aVel(a[4] * cos(a[2]), a[4] * sin(a[2]));
+      Eigen::Matrix<T, 2, 1> aVel(agents(4, i) * cos(agents(2, i)),
+                                  agents(4, i) * sin(agents(2, i)));
       Eigen::Matrix<T, 2, 1> velDiff = meVel - aVel;
       // utils::Vector2d interactionVector =
       //    me.params.lambda * velDiff + diffDirection;
@@ -358,16 +319,16 @@ protected:
       // double forceVelocityAmount =
       //    -std::exp(-diff.norm() / B - PW(me.params.nPrime * B * thetaRad));
       T forceVelocityAmount =
-          -std::exp(-diff.norm() / B - ((T)sfm_nPrime_ * B * theta) *
-                                           ((T)sfm_nPrime_ * B * theta));
+          -(T)std::exp(-(T)diff.norm() / B - ((T)sfm_nPrime_ * B * theta) *
+                                                 ((T)sfm_nPrime_ * B * theta));
       // double forceAngleAmount =
       //     -theta.sign() *
       //     std::exp(-diff.norm() / B - PW(me.params.n * B * thetaRad));
-      T sign = 0;
-      if (theta > 0)
-        sign = 1;
-      if (theta < 0)
-        sign = -1;
+      T sign = (T)0;
+      if (theta > (T)0)
+        sign = (T)1;
+      if (theta < (T)0)
+        sign = (T)-1;
       T forceAngleAmount =
           -sign * std::exp(-diff.norm() / B -
                            ((T)sfm_n_ * B * theta) * ((T)sfm_n_ * B * theta));
@@ -386,89 +347,6 @@ protected:
     }
     return meSocialforce;
   }
-
-  // Eigen::Vector2f
-  // computeSocialForce(const AgentStatus &me,
-  //                    const std::vector<AgentStatus> &agents) const {
-
-  //   // AgentStatus: x, y, yaw, t, lv, av
-  //   Eigen::Vector2f meSocialforce(0.0, 0.0);
-  //   Eigen::Vector2f mePos(me[0], me[1]); // x,y, position vector
-  //   // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
-  //   Eigen::Vector2f meVel(me[4] * cos(me[2]),
-  //                         me[4] * sin(me[2])); // vx,vy, velocity vector
-
-  //   // for (unsigned i = 0; i < agents.size(); i++) {
-  //   for (auto a : agents) {
-
-  //     // utils::Vector2d diff = agents[i].position - me.position;
-  //     Eigen::Vector2f aPos(a[0], a[1]);
-  //     Eigen::Vector2f diff = mePos - aPos;
-  //     // utils::Vector2d diffDirection = diff.normalized();
-  //     Eigen::Vector2f diffDirection = diff.normalized();
-  //     // utils::Vector2d velDiff = me.velocity - agents[i].velocity;
-  //     Eigen::Vector2f aVel(a[4] * cos(a[2]), a[4] * sin(a[2]));
-  //     Eigen::Vector2f velDiff = meVel - aVel;
-  //     // utils::Vector2d interactionVector =
-  //     //    me.params.lambda * velDiff + diffDirection;
-  //     Eigen::Vector2f interactionVector = sfm_lambda_ * velDiff +
-  //     diffDirection;
-  //     // double interactionLength = interactionVector.norm();
-  //     double interactionLength = interactionVector.norm();
-  //     // utils::Vector2d interactionDirection =
-  //     //    interactionVector / interactionLength;
-  //     Eigen::Vector2f interactionDirection =
-  //         interactionVector / interactionLength;
-  //     // utils::Angle theta = interactionDirection.angleTo(diffDirection);
-  //     double angle1 = atan2(diffDirection[1], diffDirection[0]);
-  //     while (angle1 <= -M_PI)
-  //       angle1 += 2 * M_PI;
-  //     while (angle1 > M_PI)
-  //       angle1 -= 2 * M_PI;
-  //     double angle2 = atan2(interactionDirection[1],
-  //     interactionDirection[0]); while (angle2 <= -M_PI)
-  //       angle2 += 2 * M_PI;
-  //     while (angle2 > M_PI)
-  //       angle2 -= 2 * M_PI;
-  //     double theta = angle1 - angle2;
-  //     while (theta <= -M_PI)
-  //       theta += 2 * M_PI;
-  //     while (theta > M_PI)
-  //       theta -= 2 * M_PI;
-  //     // double B = me.params.gamma * interactionLength;
-  //     double B = sfm_gamma_ * interactionLength;
-  //     // double thetaRad = theta.toRadian();
-  //     // double forceVelocityAmount =
-  //     //    -std::exp(-diff.norm() / B - PW(me.params.nPrime * B *
-  //     thetaRad)); double forceVelocityAmount =
-  //         -std::exp(-diff.norm() / B -
-  //                   (sfm_nPrime_ * B * theta) * (sfm_nPrime_ * B * theta));
-  //     // double forceAngleAmount =
-  //     //     -theta.sign() *
-  //     //     std::exp(-diff.norm() / B - PW(me.params.n * B * thetaRad));
-  //     int sign = 0;
-  //     if (theta > 0)
-  //       sign = 1;
-  //     if (theta < 0)
-  //       sign = -1;
-  //     double forceAngleAmount =
-  //         -sign * std::exp(-diff.norm() / B -
-  //                          (sfm_n_ * B * theta) * (sfm_n_ * B * theta));
-  //     // utils::Vector2d forceVelocity =
-  //     //     forceVelocityAmount * interactionDirection;
-  //     Eigen::Vector2f forceVelocity =
-  //         forceVelocityAmount * interactionDirection;
-  //     // utils::Vector2d forceAngle =
-  //     //    forceAngleAmount * interactionDirection.leftNormalVector();
-  //     Eigen::Vector2f leftNormalVector(-interactionDirection[1],
-  //                                      interactionDirection[0]);
-  //     Eigen::Vector2f forceAngle = forceAngleAmount * leftNormalVector;
-  //     // me.forces.socialForce +=
-  //     //    me.params.forceFactorSocial * (forceVelocity + forceAngle);
-  //     meSocialforce += sfm_forceFactorSocial_ * (forceVelocity + forceAngle);
-  //   }
-  //   return meSocialforce;
-  // }
 
   const Eigen::Matrix<double, 6, 1> original_status_;
   Eigen::Matrix<double, 6, 3> original_agents_; // ceres::DYNAMIC

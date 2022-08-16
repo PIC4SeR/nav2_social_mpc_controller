@@ -91,8 +91,13 @@ public:
     // original_agents_ = m;
     // Eigen::Matrix<double, 6, cols> m;
     // Eigen::Map<const Eigen::Matrix<double, 6, 3>> m(agents_init);
-    std::cout << "agents init:" << std::endl;
-    std::cout << original_agents_ << std::endl;
+    // std::cout << "Constructor social cost function. x:" <<
+    // original_status_[0]
+    //           << " y:" << original_status_[1] << " t:" << original_status_[3]
+    //           << std::endl;
+    // std::cout << "Agents init:" << std::endl;
+    // // x, y, yaw, timestamp, lv, av
+    // std::cout << original_agents_ << std::endl;
 
     distance_w_ = 1.0;
     socialwork_w_ = 1.0;
@@ -133,7 +138,9 @@ public:
   //   costmap_interpolator_(costmap_interpolator) {}
 
   ceres::CostFunction *AutoDiff() {
-    // the first number is the number of cost functions
+    // the first number is the number of cost functions.
+    // the following number are the length of the parameters passed in the
+    // addResidualBlock function.
     // return new ceres::AutoDiffCostFunction<SocialCostFunction, 2, 6, 6,
     // 6>(this)
     return new ceres::AutoDiffCostFunction<SocialCostFunction, 2, 6>(this);
@@ -299,20 +306,21 @@ protected:
           interactionVector / interactionLength;
       // utils::Angle theta = interactionDirection.angleTo(diffDirection);
       T angle1 = atan2(diffDirection[1], diffDirection[0]);
-      while (angle1 <= -M_PI)
-        angle1 += 2 * M_PI;
-      while (angle1 > M_PI)
-        angle1 -= 2 * M_PI;
+      while (angle1 <= -(T)M_PI)
+        angle1 += (T)2 * (T)M_PI;
+      while (angle1 > (T)M_PI)
+        angle1 -= (T)2 * (T)M_PI;
       T angle2 = atan2(interactionDirection[1], interactionDirection[0]);
-      while (angle2 <= -M_PI)
-        angle2 += 2 * M_PI;
-      while (angle2 > M_PI)
-        angle2 -= 2 * M_PI;
+      while (angle2 <= -(T)M_PI)
+        angle2 += (T)2 * (T)M_PI;
+      while (angle2 > (T)M_PI)
+        angle2 -= (T)2 * (T)M_PI;
       T theta = angle1 - angle2;
-      while (theta <= -M_PI)
-        theta += 2 * M_PI;
-      while (theta > M_PI)
-        theta -= 2 * M_PI;
+      while (theta <= -(T)M_PI)
+        theta += (T)2 * (T)M_PI;
+      while (theta > (T)M_PI)
+        theta -= (T)2 * (T)M_PI;
+
       // double B = me.params.gamma * interactionLength;
       T B = (T)sfm_gamma_ * interactionLength;
       // double thetaRad = theta.toRadian();
@@ -346,6 +354,15 @@ protected:
       meSocialforce += (T)sfm_forceFactorSocial_ * (forceVelocity + forceAngle);
     }
     return meSocialforce;
+  }
+
+  template <typename T> inline T normalizeAngle(const T &angle) {
+    T a = *angle;
+    while (a <= -(T)M_PI)
+      a += (T)2 * (T)M_PI;
+    while (a > (T)M_PI)
+      a -= (T)2 * (T)M_PI;
+    return a;
   }
 
   const Eigen::Matrix<double, 6, 1> original_status_;

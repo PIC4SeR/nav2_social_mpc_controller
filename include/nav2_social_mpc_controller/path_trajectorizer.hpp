@@ -163,6 +163,7 @@ protected:
   double max_angular_vel_;
   bool omnidirectional_;
   double time_step_;
+  double max_steps_;
   // tf2::Duration transform_tolerance_;
   rclcpp::Duration transform_tolerance_{0, 0};
   std::string base_frame_;

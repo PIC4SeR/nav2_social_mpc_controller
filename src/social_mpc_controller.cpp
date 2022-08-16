@@ -97,6 +97,7 @@ void SocialMPCController::configure(
   trajectorizer_->configure(node, name, tf_);
 
   // Create the optimizer
+  google::InitGoogleLogging(name.c_str());
   optimizer_ = std::make_unique<Optimizer>();
   optimizer_params_.get(node.get(), name);
   optimizer_->initialize(optimizer_params_);
@@ -110,6 +111,8 @@ void SocialMPCController::configure(
   //    "lookahead_point", 1);
   local_path_pub_ =
       node->create_publisher<nav_msgs::msg::Path>("robot_local_plan", 1);
+  // optimized_path_pub_ = node->create_publisher<nav_msgs::msg::Path>(
+  //    "robot_optimized_local_plan", 1);
 }
 
 void SocialMPCController::cleanup() {
@@ -119,6 +122,7 @@ void SocialMPCController::cleanup() {
               plugin_name_.c_str());
   global_path_pub_.reset();
   local_path_pub_.reset();
+  // optimized_path_pub_.reset();
   // people_sub_.reset();
 }
 
@@ -130,6 +134,7 @@ void SocialMPCController::activate() {
   trajectorizer_->activate();
   global_path_pub_->on_activate();
   local_path_pub_->on_activate();
+  // optimized_path_pub_->on_activate();
   // people_sub_->on_activate();
 }
 
@@ -141,6 +146,7 @@ void SocialMPCController::deactivate() {
   trajectorizer_->deactivate();
   global_path_pub_->on_deactivate();
   local_path_pub_->on_deactivate();
+  // optimized_path_pub_->on_deactivate();
   // people_sub_->on_deactivate();
 }
 
@@ -184,21 +190,36 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   nav_msgs::msg::Path traj_path = global_plan_;
   std::vector<geometry_msgs::msg::TwistStamped> cmds;
   trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
+  std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
 
+  RCLCPP_INFO(logger_, "Trajectorized Path length: %i",
+              (int)traj_path.poses.size());
+
+  // Be careful, path and people must be in the same frame
   people_msgs::msg::People people = people_interface_->getPeople();
+  // printf("people detected: %i\n", (int)people.people.size());
 
   float ts = trajectorizer_->getTimeStep();
-  optimizer_->optimize(traj_path, cmds, people, speed, ts);
+  bool ok = optimizer_->optimize(traj_path, cmds, people, speed, ts);
 
-  // RCLCPP_INFO(logger_, "Current speed, vx: %.2f, vz: %.2f", speed.linear.x,
-  //             speed.angular.z);
+  local_path_pub_->publish(traj_path);
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
-  cmd_vel.header = cmds[0].header;
-  cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
-  cmd_vel.twist.linear.y = cmds[0].twist.linear.y;
-  cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
+  if (ok) {
+    RCLCPP_INFO(logger_, "Optimized Path length: %i\n",
+                (int)traj_path.poses.size());
+    cmd_vel.header = cmds[0].header;
+    cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
+    cmd_vel.twist.linear.y = cmds[0].twist.linear.y;
+    cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
+  } else {
+    RCLCPP_INFO(logger_, "Optimization failed!!!\n");
+    cmd_vel.header = init_cmds[0].header;
+    cmd_vel.twist.linear.x = init_cmds[0].twist.linear.x;
+    cmd_vel.twist.linear.y = init_cmds[0].twist.linear.y;
+    cmd_vel.twist.angular.z = init_cmds[0].twist.angular.z;
+  }
   return cmd_vel;
 }
 

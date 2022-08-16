@@ -87,7 +87,9 @@ void PathTrajectorizer::configure(
   declare_parameter_if_not_declared(node_, plugin_name_ + ".base_frame",
                                     rclcpp::ParameterValue("base_footprint"));
   declare_parameter_if_not_declared(node_, plugin_name_ + ".time_step",
-                                    rclcpp::ParameterValue(0.01));
+                                    rclcpp::ParameterValue(0.05));
+  declare_parameter_if_not_declared(node_, plugin_name_ + ".max_time",
+                                    rclcpp::ParameterValue(5.0));
 
   // declare_parameter_if_not_declared(node, plugin_name_ +
   // ".min_lookahead_dist",
@@ -105,6 +107,8 @@ void PathTrajectorizer::configure(
   node_->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
   node_->get_parameter(plugin_name_ + ".base_frame", base_frame_);
   node_->get_parameter(plugin_name_ + ".time_step", time_step_);
+  double max_time;
+  node_->get_parameter(plugin_name_ + ".max_time", max_time);
   double transform_tolerance;
   node_->get_parameter(plugin_name_ + ".transform_tolerance",
                        transform_tolerance);
@@ -112,11 +116,14 @@ void PathTrajectorizer::configure(
 
   RCLCPP_INFO(logger_, "Path Trajectorizer params:");
   RCLCPP_INFO(logger_, "omnidirectional: %i", (int)omnidirectional_);
-  RCLCPP_INFO(logger_, "desired_linear_vel: %.2f", desired_linear_vel_);
-  RCLCPP_INFO(logger_, "lookahead_dist: %.2f", lookahead_dist_);
-  RCLCPP_INFO(logger_, "max_angular_vel: %.2f", max_angular_vel_);
-  RCLCPP_INFO(logger_, "time_step: %.2f", time_step_);
+  RCLCPP_INFO(logger_, "desired_linear_vel: %.2f m/s", desired_linear_vel_);
+  RCLCPP_INFO(logger_, "lookahead_dist: %.2f m", lookahead_dist_);
+  RCLCPP_INFO(logger_, "max_angular_vel: %.2f rad/s", max_angular_vel_);
+  RCLCPP_INFO(logger_, "time_step: %.2f secs", time_step_);
+  RCLCPP_INFO(logger_, "max_time: %.2f secs", max_time);
   RCLCPP_INFO(logger_, "base_frame: %s", base_frame_.c_str());
+
+  max_steps_ = (int)round(max_time / time_step_);
 
   received_path_pub_ =
       node_->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
@@ -187,7 +194,8 @@ bool PathTrajectorizer::trajectorize(
 
   double goal_dist = 1000.0;
   double goal_dist_threshold = 0.05;
-  while (goal_dist > goal_dist_threshold) {
+  int steps = 0;
+  while (goal_dist > goal_dist_threshold && steps < max_steps_) {
     double wpx;
     double wpy;
     double min_dist = 100.0;
@@ -272,6 +280,7 @@ bool PathTrajectorizer::trajectorize(
     wpx = path.poses[path.poses.size() - 1].pose.position.x;
     wpy = path.poses[path.poses.size() - 1].pose.position.y;
     goal_dist = sqrt((rx - wpx) * (rx - wpx) + (ry - wpy) * (ry - wpy));
+    steps++;
   }
 
   // RCLCPP_INFO(logger_, "Path length received: %i \nPath length computed: %i

@@ -50,7 +50,7 @@ struct OptimizerParams {
 
   /**
    * @brief Get params from ROS parameter
-   * @param node_ Ptr to node
+   * @param node Ptr to node
    * @param name Name of plugin
    */
   void get(rclcpp_lifecycle::LifecycleNode *node, const std::string &name) {
@@ -93,7 +93,7 @@ struct OptimizerParams {
     node->get_parameter(local_name + "debug_optimizer", debug);
 
     nav2_util::declare_parameter_if_not_declared(
-        node, local_name + "max_time_allowed", rclcpp::ParameterValue(0.5));
+        node, local_name + "max_time_allowed", rclcpp::ParameterValue(2.0));
     node->get_parameter(local_name + "max_time_allowed", max_time);
   }
 
@@ -185,6 +185,7 @@ public:
     // optimizer
     std::vector<AgentStatus> initial_status =
         format_to_optimize(path, cmds, speed, time_step);
+    // printf("Path length: %i\n", (int)initial_status.size());
     std::vector<AgentStatus> optim_status = initial_status;
 
     // build the problem
@@ -195,8 +196,8 @@ public:
     // parámetros es ese punto) Después en el addResidualBlock(), añadir la cost
     // function así como el punto actual, su anterior y su posterior.
 
-    // Set up a cost function per point into the cloud
-    for (unsigned int i = 1; i < optim_status.size() - 1; i++) {
+    // Set up a cost function per point into the path
+    for (unsigned int i = 0; i < optim_status.size(); i++) {
 
       // double si[] = {initial_status[i][0], initial_status[i][1],
       //                initial_status[i][2], initial_status[i][3],
@@ -204,9 +205,9 @@ public:
       SocialCostFunction *cost_function =
           new SocialCostFunction(initial_status[i], init_people, time_step);
 
-      double xi[] = {optim_status[i][0], optim_status[i][1],
-                     optim_status[i][2], optim_status[i][3],
-                     optim_status[i][4], optim_status[i][5]};
+      // double xi[] = {optim_status[i][0], optim_status[i][1],
+      //                optim_status[i][2], optim_status[i][3],
+      //                optim_status[i][4], optim_status[i][5]};
       // double xip[] = {optim_status[i - 1][0], optim_status[i - 1][1],
       //                 optim_status[i - 1][2], optim_status[i - 1][3],
       //                 optim_status[i - 1][4], optim_status[i - 1][5]};
@@ -216,21 +217,36 @@ public:
 
       // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xip,
       //                         xi, xia);
-      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xi);
+      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function,
+                               optim_status[i].data()); // loss_function, xi
     }
+    // printf("After for loop for adding cost functions!!!!");
     // first and last points are constant
     problem.SetParameterBlockConstant(optim_status.front().data());
     // problem.SetParameterBlockConstant(status.back().data());
 
     // solve the problem
     ceres::Solver::Summary summary;
+    // printf("Before calling Solve!!!!");
     ceres::Solve(options_, &problem, &summary);
     if (!summary.IsSolutionUsable()) {
+      // printf("Optimization failed!!!\n");
       return false;
     }
 
     // Get the solution from optim_status
-
+    path.poses.clear();
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header = path.header;
+    for (auto point : optim_status) {
+      pose.pose.position.x = point(0, 0);
+      pose.pose.position.y = point(1, 0);
+      tf2::Quaternion myQuaternion;
+      myQuaternion.setRPY(0, 0, point(2, 0));
+      pose.pose.orientation = tf2::toMsg(myQuaternion);
+      path.poses.push_back(pose);
+    }
+    // printf("Optimized Path length: %i\n", (int)path.poses.size());
     return true;
 
     // std::vector<Eigen::Vector3d> path_optim;
@@ -273,6 +289,18 @@ private:
           (double)p.velocity.z;
       people_status.push_back(st);
     }
+    // we add agents if needed
+    while ((int)people_status.size() < 3) {
+      AgentStatus st;
+      // we fill with invalid agent: time=-1
+      st << 0.0, 0.0, 0.0, -1.0, 0.0, 0.0;
+      people_status.push_back(st);
+    }
+    // we remove agents if needed
+    while ((int)people_status.size() > 3) {
+      people_status.pop_back();
+    }
+
     return people_status;
   }
 

@@ -263,6 +263,9 @@ protected:
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
       local_path_pub_;
 
+  // std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
+  //    optimized_path_pub_;
+
   // OptimizerParams optimizer_params_;
 };
 

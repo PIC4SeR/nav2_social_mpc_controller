@@ -192,23 +192,34 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
 
-  RCLCPP_INFO(logger_, "Trajectorized Path length: %i",
-              (int)traj_path.poses.size());
+  RCLCPP_INFO(logger_,
+              "Original path length: %i, Trajectorized Path length: %i",
+              (int)global_plan_.poses.size(), (int)traj_path.poses.size());
 
   // Be careful, path and people must be in the same frame
   people_msgs::msg::People people = people_interface_->getPeople();
-  // printf("people detected: %i\n", (int)people.people.size());
+  if (people.header.frame_id != traj_path.header.frame_id) {
+    // transform people to the global frame
+    for (auto p : people.people) {
+      geometry_msgs::msg::Point point;
+      if (!transformPoint(global_plan_.header.frame_id, p.position, point)) {
+        throw nav2_core::PlannerException(
+            "Unable to transform people point into global plan's frame");
+      }
+      p.position = point;
+    }
+  }
 
   float ts = trajectorizer_->getTimeStep();
-  bool ok = optimizer_->optimize(traj_path, cmds, people, speed, ts);
+  bool ok = optimizer_->optimize(traj_path, costmap_, cmds, people, speed, ts);
 
   local_path_pub_->publish(traj_path);
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   if (ok) {
-    RCLCPP_INFO(logger_, "Optimized Path length: %i\n",
-                (int)traj_path.poses.size());
+    // RCLCPP_INFO(logger_, "Optimized Path length: %i\n",
+    //            (int)traj_path.poses.size());
     cmd_vel.header = cmds[0].header;
     cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
     cmd_vel.twist.linear.y = cmds[0].twist.linear.y;
@@ -505,6 +516,19 @@ bool SocialMPCController::transformPose(
     return true;
   } catch (tf2::TransformException &ex) {
     RCLCPP_ERROR(logger_, "Exception in transformPose: %s", ex.what());
+  }
+  return false;
+}
+
+bool SocialMPCController::transformPoint(
+    const std::string frame, const geometry_msgs::msg::Point &in_point,
+    geometry_msgs::msg::Point &out_point) const {
+
+  try {
+    tf_->transform(in_point, out_point, frame, transform_tolerance_);
+    return true;
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_ERROR(logger_, "Exception in transformPoint: %s", ex.what());
   }
   return false;
 }

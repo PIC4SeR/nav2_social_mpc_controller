@@ -32,12 +32,14 @@
 #include "ceres/ceres.h"
 #include "ceres/cubic_interpolation.h"
 
-// Social Force Model
-//#include <lightsfm/sfm.hpp>
+// cost functions
+#include "nav2_social_mpc_controller/distance_cost_function.hpp"
+#include "nav2_social_mpc_controller/obstacle_cost_function.hpp"
+#include "nav2_social_mpc_controller/social_work_function.hpp"
 
-#include "nav2_social_mpc_controller/social_cost_function.hpp"
+#include "people_msgs/msg/people.hpp"
 
-// the agents status contain 5 values:
+// the agents status contain 6 values:
 // x, y, yaw, timestamp, lv, av
 // typedef Eigen::Matrix<double, 6, 1> AgentStatus;
 
@@ -118,6 +120,14 @@ struct OptimizerParams {
  */
 class Optimizer {
 public:
+  struct position {
+    double params[2];
+  };
+
+  struct posandvel {
+    double params[4];
+  };
+
   /**
    * @brief Construct a new Optimizer object
    *
@@ -167,11 +177,11 @@ public:
    * @return false
    */
   bool optimize(nav_msgs::msg::Path &path,
+                const nav2_costmap_2d::Costmap2D *costmap,
                 const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
                 const people_msgs::msg::People &people,
                 const geometry_msgs::msg::Twist &speed, const float time_step) {
-    // const nav2_costmap_2d::Costmap2D *costmap,
-    // const SmootherParams &params) {
+
     // Path has always at least 2 points
     if (path.poses.size() < 2) {
       // throw std::runtime_error("Optimizer: Path must have at least 2
@@ -179,18 +189,49 @@ public:
       return false;
     }
 
+    distance_w_ = 1.0;
+    socialwork_w_ = 1.0;
+    obstacle_w_ = 3.0;
+
+    // Create costmap grid
+    costmap_grid_ = std::make_shared<ceres::Grid2D<u_char>>(
+        costmap->getCharMap(), 0, costmap->getSizeInCellsY(), 0,
+        costmap->getSizeInCellsX());
+    auto costmap_interpolator =
+        std::make_shared<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>(
+            *costmap_grid_);
+
     std::vector<AgentStatus> init_people = people_to_status(people);
 
     // Transform the initial solution path to a format suitable for the
     // optimizer
     std::vector<AgentStatus> initial_status =
         format_to_optimize(path, cmds, speed, time_step);
+
+    std::vector<position> ini_positions;
+    // std::vector<posandvel> ini_posandvels;
+    for (auto a : initial_status) {
+      position p;
+      // posandvel pv;
+      p.params[0] = a[0];
+      p.params[1] = a[1];
+      // pv.params[0] = a[0];
+      // pv.params[1] = a[1];
+      // pv.params[2] = a[4];
+      // pv.params[3] = a[5];
+      ini_positions.push_back(p);
+    }
     // printf("Path length: %i\n", (int)initial_status.size());
     std::vector<AgentStatus> optim_status = initial_status;
+    std::vector<position> optim_positions = ini_positions;
+
+    // goal
+    Eigen::Matrix<double, 2, 1> g(initial_status.back()[0],
+                                  initial_status.back()[1]);
 
     // build the problem
     ceres::Problem problem;
-    ceres::LossFunction *loss_function = NULL;
+    // ceres::LossFunction *loss_function = NULL;
 
     // para cada punto del path inicial, añadir una costFunction (uno de los
     // parámetros es ese punto) Después en el addResidualBlock(), añadir la cost
@@ -199,36 +240,46 @@ public:
     // Set up a cost function per point into the path
     for (unsigned int i = 0; i < optim_status.size(); i++) {
 
-      // double si[] = {initial_status[i][0], initial_status[i][1],
-      //                initial_status[i][2], initial_status[i][3],
-      //                initial_status[i][4], initial_status[i][5]};
-      SocialCostFunction *cost_function =
-          new SocialCostFunction(initial_status[i], init_people, time_step);
+      // SocialCostFunction *cost_function =
+      //     new SocialCostFunction(initial_status[i], costmap,
+      //                            costmap_interpolator, init_people,
+      //                            time_step);
 
-      // double xi[] = {optim_status[i][0], optim_status[i][1],
-      //                optim_status[i][2], optim_status[i][3],
-      //                optim_status[i][4], optim_status[i][5]};
-      // double xip[] = {optim_status[i - 1][0], optim_status[i - 1][1],
-      //                 optim_status[i - 1][2], optim_status[i - 1][3],
-      //                 optim_status[i - 1][4], optim_status[i - 1][5]};
-      // double xia[] = {optim_status[i + 1][0], optim_status[i + 1][1],
-      //                 optim_status[i + 1][2], optim_status[i + 1][3],
-      //                 optim_status[i + 1][4], optim_status[i + 1][5]};
+      // ObstacleCostFunction *obs_cost_function =
+      //     new ObstacleCostFunction(obstacle_w_, costmap,
+      //     costmap_interpolator);
+      ceres::CostFunction *obs_cost_function =
+          new AutoDiffCostFunction<ObstacleCostFunction, 1, 2>(
+              new ObstacleCostFunction(obstacle_w_, costmap,
+                                       costmap_interpolator));
+      problem.AddResidualBlock(obs_cost_function, NULL,
+                               optim_positions[i].params);
+      // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function,
+      //                         optim_status[i].data());
 
-      // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function, xip,
-      //                         xi, xia);
-      problem.AddResidualBlock(cost_function->AutoDiff(), loss_function,
-                               optim_status[i].data()); // loss_function, xi
+      // ceres::CostFunction *social_work_function =
+      //     new AutoDiffCostFunction<SocialWorkFunction, 1, 6>(
+      //         new SocialWorkFunction(socialwork_w_, init_people));
+      // problem.AddResidualBlock(social_work_function, NULL,
+      //                          optim_status[i].data());
+
+      ceres::CostFunction *distance_cost_function =
+          new AutoDiffCostFunction<DistanceCostFunction, 1, 2>(
+              new DistanceCostFunction(distance_w_, g));
+      problem.AddResidualBlock(distance_cost_function, NULL,
+                               optim_positions[i].params);
     }
-    // printf("After for loop for adding cost functions!!!!");
+
     // first and last points are constant
-    problem.SetParameterBlockConstant(optim_status.front().data());
-    // problem.SetParameterBlockConstant(status.back().data());
+    // problem.SetParameterBlockConstant(optim_positions.front().data());
+    problem.SetParameterBlockConstant(optim_positions.front().params);
+    problem.SetParameterBlockConstant(optim_positions..back().params);
 
     // solve the problem
     ceres::Solver::Summary summary;
     // printf("Before calling Solve!!!!");
     ceres::Solve(options_, &problem, &summary);
+    std::cout << summary.BriefReport() << "\n";
     if (!summary.IsSolutionUsable()) {
       // printf("Optimization failed!!!\n");
       return false;
@@ -238,12 +289,21 @@ public:
     path.poses.clear();
     geometry_msgs::msg::PoseStamped pose;
     pose.header = path.header;
-    for (auto point : optim_status) {
-      pose.pose.position.x = point(0, 0);
-      pose.pose.position.y = point(1, 0);
-      tf2::Quaternion myQuaternion;
-      myQuaternion.setRPY(0, 0, point(2, 0));
-      pose.pose.orientation = tf2::toMsg(myQuaternion);
+    // for (auto point : optim_status) {
+    //   pose.pose.position.x = point(0, 0);
+    //   pose.pose.position.y = point(1, 0);
+    //   tf2::Quaternion myQuaternion;
+    //   myQuaternion.setRPY(0, 0, point(2, 0));
+    //   pose.pose.orientation = tf2::toMsg(myQuaternion);
+    //   path.poses.push_back(pose);
+    // }
+    // Get the solution from optim_positions
+    for (auto point : optim_positions) {
+      pose.pose.position.x = point.params[0];
+      pose.pose.position.y = point.params[1];
+      // tf2::Quaternion myQuaternion;
+      // myQuaternion.setRPY(0, 0, point(2, 0));
+      // pose.pose.orientation = tf2::toMsg(myQuaternion);
       path.poses.push_back(pose);
     }
     // printf("Optimized Path length: %i\n", (int)path.poses.size());
@@ -605,6 +665,9 @@ private:
   // bool buildProblem(const std::vector<Eigen::Vector3d> &path,
 
   bool debug_;
+  double distance_w_;
+  double socialwork_w_;
+  double obstacle_w_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
 };

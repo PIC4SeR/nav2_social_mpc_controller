@@ -76,10 +76,15 @@ public:
    */
 
   // Should I use the costmap or a DistanceFunction???
-  SocialCostFunction(const AgentStatus &robot_state,
-                     const std::vector<AgentStatus> &agents_init,
-                     const float timestep)
-      : original_status_(robot_state), timestep_(timestep) {
+  SocialCostFunction(
+      const AgentStatus &robot_state, const nav2_costmap_2d::Costmap2D *costmap,
+      const std::shared_ptr<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>
+          &costmap_interpolator,
+      const std::vector<AgentStatus> &agents_init, const float timestep)
+      : original_status_(robot_state),
+        costmap_origin_(costmap->getOriginX(), costmap->getOriginY()),
+        costmap_resolution_(costmap->getResolution()),
+        costmap_interpolator_(costmap_interpolator), timestep_(timestep) {
 
     // const int cols = agents_init.size();
     // Eigen::Matrix<double, 6, 3> m;
@@ -88,9 +93,7 @@ public:
       original_agents_.col(i) << a[0], a[1], a[2], a[3], a[4], a[5];
       i++;
     }
-    // original_agents_ = m;
-    // Eigen::Matrix<double, 6, cols> m;
-    // Eigen::Map<const Eigen::Matrix<double, 6, 3>> m(agents_init);
+
     // std::cout << "Constructor social cost function. x:" <<
     // original_status_[0]
     //           << " y:" << original_status_[1] << " t:" << original_status_[3]
@@ -101,6 +104,7 @@ public:
 
     distance_w_ = 1.0;
     socialwork_w_ = 1.0;
+    obstacle_w_ = 3.0;
     sfm_lambda_ = 2.0;
     sfm_gamma_ = 0.35;
     sfm_nPrime_ = 3.0;
@@ -143,7 +147,7 @@ public:
     // addResidualBlock function.
     // return new ceres::AutoDiffCostFunction<SocialCostFunction, 2, 6, 6,
     // 6>(this)
-    return new ceres::AutoDiffCostFunction<SocialCostFunction, 2, 6>(this);
+    return new ceres::AutoDiffCostFunction<SocialCostFunction, 1, 6>(this);
   }
 
   /**
@@ -154,20 +158,32 @@ public:
    * @param pt_residual array of output residuals (distance, social_work)
    * @return if successful in computing values
    */
+  // template <typename T>
+  // bool operator()(const T *const pt, T *pt_residual) const {
+  //   // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_next(pt_next);
+  //   // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_prev(pt_prev);
+  //   Eigen::Matrix<T, 6, 1> xi = Eigen::Map<const Eigen::Matrix<T, 6, 1>>(pt);
+  //   // Eigen::Map<Eigen::Matrix<T, 2, 1>> residual(pt_residual);
+  //   Eigen::Matrix<T, 1, 1> residual =
+  //       Eigen::Map<Eigen::Matrix<T, 1, 1>>(pt_residual);
+  //   residual.setZero();
+
+  //   Eigen::Matrix<T, 6, 1> pathi_status = original_status_.template
+  //   cast<T>();
+  //   // pathi_status.col(0) << original_status_.template cast<T>();
+  //   addDistanceResidual(distance_w_, xi, pathi_status, residual[0]);
+  //   // addSocialWorkResidual(socialwork_w_, xi, residual[1]);
+  //   // addObstacleResidual<T>(obstacle_w_, xi, residual[0]);
+
+  //   return true;
+  // }
   template <typename T>
   bool operator()(const T *const pt, T *pt_residual) const {
-    // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_next(pt_next);
-    // Eigen::Map<const Eigen::Matrix<T, 6, 1>> xi_prev(pt_prev);
-    Eigen::Matrix<T, 6, 1> xi = Eigen::Map<const Eigen::Matrix<T, 6, 1>>(pt);
-    // Eigen::Map<Eigen::Matrix<T, 2, 1>> residual(pt_residual);
-    Eigen::Matrix<T, 2, 1> residual =
-        Eigen::Map<Eigen::Matrix<T, 2, 1>>(pt_residual);
-    residual.setZero();
 
-    Eigen::Matrix<T, 6, 1> pathi_status;
-    pathi_status.col(0) << original_status_.template cast<T>();
-    addDistanceResidual(distance_w_, xi, pathi_status, residual[0]);
-    addSocialWorkResidual(socialwork_w_, xi, residual[1]);
+    Eigen::Matrix<T, 2, 1> p(pt[0], pt[1]);
+    Eigen::Matrix<T, 2, 1> p_ori((T)original_status_[0],
+                                 (T)original_status_[1]);
+    pt_residual[0] = (T)distance_w_ * (p - p_ori).squaredNorm();
 
     return true;
   }
@@ -188,6 +204,24 @@ protected:
     Eigen::Matrix<T, 2, 1> p(xi[0], xi[1]);
     Eigen::Matrix<T, 2, 1> p_ori(xi_original[0], xi_original[1]);
     r += (T)weight * (p - p_ori).squaredNorm(); // objective function value
+    // std::cout << "p x:" << (double)p[0] << "y:" << (double)p[1]
+    //          << "po x:" << (double)p_ori[0] << "y:" << (double)p_ori[1]
+    //          << " r:" << (double)r << std::endl;
+  }
+
+  // If we are using the local costmap, the coordinates do not match.
+  // check it!!
+  template <typename T>
+  inline void addObstacleResidual(const double &weight,
+                                  const Eigen::Matrix<T, 6, 1> &xi,
+                                  T &r) const {
+    Eigen::Matrix<T, 2, 1> p(xi[0], xi[1]);
+    Eigen::Matrix<T, 2, 1> interp_pos =
+        (p - costmap_origin_.template cast<T>()) / (T)costmap_resolution_;
+    T value;
+    costmap_interpolator_->Evaluate(interp_pos[1] - (T)0.5,
+                                    interp_pos[0] - (T)0.5, &value);
+    r += (T)weight * value * value; // objective function value
   }
 
   template <typename T>
@@ -367,12 +401,14 @@ protected:
 
   const Eigen::Matrix<double, 6, 1> original_status_;
   Eigen::Matrix<double, 6, 3> original_agents_; // ceres::DYNAMIC
-  const float timestep_;
   double distance_w_;
   double socialwork_w_;
-  // std::shared_ptr<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>
-  //    costmap_interpolator_;
-
+  double obstacle_w_;
+  Eigen::Vector2d costmap_origin_;
+  double costmap_resolution_;
+  std::shared_ptr<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>
+      costmap_interpolator_;
+  const float timestep_;
   double sfm_lambda_;
   double sfm_gamma_;
   double sfm_nPrime_;

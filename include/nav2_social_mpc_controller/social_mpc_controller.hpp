@@ -123,6 +123,19 @@ protected:
                      const geometry_msgs::msg::PoseStamped &in_pose,
                      geometry_msgs::msg::PoseStamped &out_pose) const;
 
+  /**
+   * @brief
+   *
+   * @param frame
+   * @param in_point
+   * @param out_point
+   * @return true
+   * @return false
+   */
+  bool transformPoint(const std::string frame,
+                      const geometry_msgs::msg::Point &in_point,
+                      geometry_msgs::msg::Point &out_point) const;
+
   // /**
   //  * @brief Get lookahead distance
   //  * @param cmd the current speed to use to compute lookahead point

@@ -33,6 +33,7 @@
 #include "ceres/cubic_interpolation.h"
 
 // cost functions
+#include "nav2_social_mpc_controller/curvature_cost_function.hpp"
 #include "nav2_social_mpc_controller/distance_cost_function.hpp"
 #include "nav2_social_mpc_controller/obstacle_cost_function.hpp"
 #include "nav2_social_mpc_controller/social_work_function.hpp"
@@ -189,9 +190,11 @@ public:
       return false;
     }
 
-    distance_w_ = 1.0;
-    socialwork_w_ = 1.0;
+    distance_w_ = 0.2;
+    socialwork_w_ = 10.0;
     obstacle_w_ = 3.0;
+    curvature_w_ = 1.0;
+    curvature_angle_min_ = M_PI / 15.0;
 
     // Create costmap grid
     costmap_grid_ = std::make_shared<ceres::Grid2D<u_char>>(
@@ -226,8 +229,9 @@ public:
     std::vector<position> optim_positions = ini_positions;
 
     // goal
-    Eigen::Matrix<double, 2, 1> g(initial_status.back()[0],
-                                  initial_status.back()[1]);
+    // position g;
+    // g.params[0] = initial_status.back()[0];
+    // g.params[1] = initial_status.back()[1];
 
     // build the problem
     ceres::Problem problem;
@@ -248,32 +252,43 @@ public:
       // ObstacleCostFunction *obs_cost_function =
       //     new ObstacleCostFunction(obstacle_w_, costmap,
       //     costmap_interpolator);
-      ceres::CostFunction *obs_cost_function =
-          new AutoDiffCostFunction<ObstacleCostFunction, 1, 2>(
-              new ObstacleCostFunction(obstacle_w_, costmap,
-                                       costmap_interpolator));
-      problem.AddResidualBlock(obs_cost_function, NULL,
-                               optim_positions[i].params);
+      // ceres::CostFunction *obs_cost_function =
+      //     new AutoDiffCostFunction<ObstacleCostFunction, 1, 2>(
+      //         new ObstacleCostFunction(obstacle_w_, costmap,
+      //                                  costmap_interpolator));
+      // problem.AddResidualBlock(obs_cost_function, NULL,
+      //                          optim_positions[i].params);
       // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function,
       //                         optim_status[i].data());
 
-      // ceres::CostFunction *social_work_function =
-      //     new AutoDiffCostFunction<SocialWorkFunction, 1, 6>(
-      //         new SocialWorkFunction(socialwork_w_, init_people));
-      // problem.AddResidualBlock(social_work_function, NULL,
-      //                          optim_status[i].data());
+      ceres::CostFunction *social_work_function =
+          new AutoDiffCostFunction<SocialWorkFunction, 1, 6>(
+              new SocialWorkFunction(socialwork_w_, init_people));
+      problem.AddResidualBlock(social_work_function, NULL,
+                               optim_status[i].data());
 
+      Eigen::Matrix<double, 2, 1> point(ini_positions[i].params[0],
+                                        ini_positions[i].params[1]);
       ceres::CostFunction *distance_cost_function =
           new AutoDiffCostFunction<DistanceCostFunction, 1, 2>(
-              new DistanceCostFunction(distance_w_, g));
+              new DistanceCostFunction(distance_w_, point));
       problem.AddResidualBlock(distance_cost_function, NULL,
                                optim_positions[i].params);
+
+      if (i < optim_status.size() - 2) {
+        CostFunction *curvature_cost_function =
+            new AutoDiffCostFunction<CurvatureCostFunction, 1, 2, 2, 2>(
+                new CurvatureCostFunction(curvature_w_, curvature_angle_min_));
+        problem.AddResidualBlock(
+            curvature_cost_function, NULL, optim_positions[i].params,
+            optim_positions[i + 1].params, optim_positions[i + 2].params);
+      }
     }
 
     // first and last points are constant
     // problem.SetParameterBlockConstant(optim_positions.front().data());
     problem.SetParameterBlockConstant(optim_positions.front().params);
-    problem.SetParameterBlockConstant(optim_positions..back().params);
+    problem.SetParameterBlockConstant(optim_positions.back().params);
 
     // solve the problem
     ceres::Solver::Summary summary;
@@ -668,6 +683,8 @@ private:
   double distance_w_;
   double socialwork_w_;
   double obstacle_w_;
+  double curvature_w_;
+  double curvature_angle_min_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
 };

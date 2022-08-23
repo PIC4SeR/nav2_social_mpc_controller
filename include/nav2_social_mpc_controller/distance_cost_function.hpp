@@ -19,10 +19,6 @@
 #include "ceres/ceres.h"
 #include "glog/logging.h"
 
-// the agents status contain 6 values:
-// x, y, yaw, timestamp, lv, av
-typedef Eigen::Matrix<double, 6, 1> AgentStatus;
-
 namespace nav2_social_mpc_controller {
 
 using ceres::AutoDiffCostFunction;
@@ -31,6 +27,11 @@ using ceres::Problem;
 using ceres::Solve;
 using ceres::Solver;
 
+/**
+ * @brief Can be use to induce path points closer to the initial path points,
+ * or point closer to the goal.
+ *
+ */
 class DistanceCostFunction {
 
 public:

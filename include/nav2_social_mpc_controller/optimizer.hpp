@@ -121,12 +121,24 @@ struct OptimizerParams {
  */
 class Optimizer {
 public:
+  // x, y
   struct position {
     double params[2];
   };
 
+  // x, y, lv, av
   struct posandvel {
     double params[4];
+  };
+
+  // lv, av
+  struct vel {
+    double params[2];
+  };
+
+  // t, yaw
+  struct heading {
+    double params[2];
   };
 
   /**
@@ -212,17 +224,22 @@ public:
         format_to_optimize(path, cmds, speed, time_step);
 
     std::vector<position> ini_positions;
+    std::vector<heading> ini_headings;
+    std::vector<vel> ini_velocities;
     // std::vector<posandvel> ini_posandvels;
     for (auto a : initial_status) {
       position p;
-      // posandvel pv;
-      p.params[0] = a[0];
-      p.params[1] = a[1];
-      // pv.params[0] = a[0];
-      // pv.params[1] = a[1];
-      // pv.params[2] = a[4];
-      // pv.params[3] = a[5];
+      p.params[0] = a[0]; // x
+      p.params[1] = a[1]; // y
+      vel v;
+      v.params[0] = a[4]; // lv
+      v.params[1] = a[5]; // av
+      heading h;
+      h.params[0] = a[3]; // t
+      h.params[1] = a[2]; // yaw
       ini_positions.push_back(p);
+      ini_velocities.push_back(v);
+      ini_headings.push_back(h);
     }
     // printf("Path length: %i\n", (int)initial_status.size());
     std::vector<AgentStatus> optim_status = initial_status;
@@ -244,11 +261,6 @@ public:
     // Set up a cost function per point into the path
     for (unsigned int i = 0; i < optim_status.size(); i++) {
 
-      // SocialCostFunction *cost_function =
-      //     new SocialCostFunction(initial_status[i], costmap,
-      //                            costmap_interpolator, init_people,
-      //                            time_step);
-
       // ObstacleCostFunction *obs_cost_function =
       //     new ObstacleCostFunction(obstacle_w_, costmap,
       //     costmap_interpolator);
@@ -262,10 +274,11 @@ public:
       //                         optim_status[i].data());
 
       ceres::CostFunction *social_work_function =
-          new AutoDiffCostFunction<SocialWorkFunction, 1, 6>(
+          new AutoDiffCostFunction<SocialWorkFunction, 1, 2, 2, 2>(
               new SocialWorkFunction(socialwork_w_, init_people));
-      problem.AddResidualBlock(social_work_function, NULL,
-                               optim_status[i].data());
+      problem.AddResidualBlock(
+          social_work_function, NULL, optim_positions[i].params,
+          ini_headings[i].params, ini_velocities[i].params);
 
       Eigen::Matrix<double, 2, 1> point(ini_positions[i].params[0],
                                         ini_positions[i].params[1]);

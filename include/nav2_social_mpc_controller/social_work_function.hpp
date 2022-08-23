@@ -62,22 +62,24 @@ public:
     // the first number is the number of cost functions.
     // the following number are the length of the parameters passed in the
     // addResidualBlock function.
-    return new ceres::AutoDiffCostFunction<SocialWorkFunction, 1, 6>(this);
+    return new ceres::AutoDiffCostFunction<SocialWorkFunction, 1, 2, 2, 2>(
+        this);
   }
 
   template <typename T>
-  bool operator()(const T *const state, T *residual) const {
+  bool operator()(const T *const state1, const T *const state2,
+                  const T *const state3, T *residual) const {
 
     // Compute robot social work
     Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();
     Eigen::Matrix<T, 6, 1> robot;
     // robot.col(0) << state;
-    robot(0, 0) = state[0];
-    robot(1, 0) = state[1];
-    robot(2, 0) = state[2];
-    robot(3, 0) = state[3];
-    robot(4, 0) = state[4];
-    robot(5, 0) = state[5];
+    robot(0, 0) = state1[0]; // x
+    robot(1, 0) = state1[1]; // y
+    robot(2, 0) = state2[1]; // yaw
+    robot(3, 0) = state2[0]; // t
+    robot(4, 0) = state3[4]; // lv
+    robot(5, 0) = state3[5]; // av
     Eigen::Matrix<T, 2, 1> robot_sf = computeSocialForce(robot, agents);
     T wr = (T)robot_sf.squaredNorm();
 

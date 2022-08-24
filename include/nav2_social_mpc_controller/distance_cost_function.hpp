@@ -50,8 +50,8 @@ public:
 
     Eigen::Matrix<T, 2, 1> p(state[0], state[1]);
     Eigen::Matrix<T, 2, 1> p_ori((T)point_[0], (T)point_[1]);
-    residual[0] =
-        (T)weight_ * (p - p_ori).squaredNorm(); // objective function value
+    residual[0] = (T)weight_ * (p - p_ori).squaredNorm() *
+                  (p - p_ori).squaredNorm(); // objective function value
 
     return true;
   }

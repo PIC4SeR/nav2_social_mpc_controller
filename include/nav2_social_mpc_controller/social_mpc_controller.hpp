@@ -30,6 +30,11 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
+
+// the agents status contain 6 values:
+// x, y, yaw, timestamp, lv, av
+// typedef Eigen::Matrix<double, 6, 1> AgentStatus;
 
 namespace nav2_social_mpc_controller {
 
@@ -101,6 +106,9 @@ public:
    * @param path The global plan
    */
   void setPlan(const nav_msgs::msg::Path &path) override;
+
+  void publish_people_traj(const std::vector<std::vector<AgentStatus>> &people,
+                           const std_msgs::msg::Header &header);
 
 protected:
   /**
@@ -276,8 +284,9 @@ protected:
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
       local_path_pub_;
 
-  // std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>>
-  //    optimized_path_pub_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<
+      visualization_msgs::msg::MarkerArray>>
+      people_traj_pub_;
 
   // OptimizerParams optimizer_params_;
 };

@@ -111,8 +111,10 @@ void SocialMPCController::configure(
   //    "lookahead_point", 1);
   local_path_pub_ =
       node->create_publisher<nav_msgs::msg::Path>("robot_local_plan", 1);
-  // optimized_path_pub_ = node->create_publisher<nav_msgs::msg::Path>(
-  //    "robot_optimized_local_plan", 1);
+
+  people_traj_pub_ =
+      node->create_publisher<visualization_msgs::msg::MarkerArray>(
+          "people_projected_trajectory", 1);
 }
 
 void SocialMPCController::cleanup() {
@@ -122,7 +124,7 @@ void SocialMPCController::cleanup() {
               plugin_name_.c_str());
   global_path_pub_.reset();
   local_path_pub_.reset();
-  // optimized_path_pub_.reset();
+  people_traj_pub_.reset();
   // people_sub_.reset();
 }
 
@@ -134,7 +136,7 @@ void SocialMPCController::activate() {
   trajectorizer_->activate();
   global_path_pub_->on_activate();
   local_path_pub_->on_activate();
-  // optimized_path_pub_->on_activate();
+  people_traj_pub_->on_activate();
   // people_sub_->on_activate();
 }
 
@@ -146,7 +148,7 @@ void SocialMPCController::deactivate() {
   trajectorizer_->deactivate();
   global_path_pub_->on_deactivate();
   local_path_pub_->on_deactivate();
-  // optimized_path_pub_->on_deactivate();
+  people_traj_pub_->on_deactivate();
   // people_sub_->on_deactivate();
 }
 
@@ -174,6 +176,45 @@ void SocialMPCController::deactivate() {
 
 //   return lookahead_dist;
 // }
+
+void SocialMPCController::publish_people_traj(
+    const std::vector<std::vector<AgentStatus>> &people,
+    const std_msgs::msg::Header &header) {
+
+  // Create one marker for each person
+  size_t npeople = people[0].size();
+  visualization_msgs::msg::MarkerArray ma;
+  for (size_t idx = 0; idx < npeople; idx++) {
+    if (people[0][idx][3] != -1.0) {
+      visualization_msgs::msg::Marker m;
+      m.header = header;
+      m.type = m.LINE_STRIP;
+      m.id = idx;
+      m.action = m.ADD;
+      m.scale.x = 0.05;
+      m.color.a = 1.0;
+      m.color.r = 1.0;
+      m.color.g = 0.0;
+      m.color.b = 1.0;
+      ma.markers.push_back(m);
+    }
+  }
+
+  for (unsigned int stepi = 0; stepi < people.size(); stepi++) {
+    int mi = 0;
+    for (unsigned int personi = 0; personi < people[stepi].size(); personi++) {
+      if (people[stepi][personi][3] != -1.0) {
+        geometry_msgs::msg::Point point;
+        point.x = people[stepi][personi][0];
+        point.y = people[stepi][personi][1];
+        point.z = 0.1;
+        ma.markers[mi].points.push_back(point);
+        mi++;
+      }
+    }
+  }
+  people_traj_pub_->publish(ma);
+}
 
 geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped &pose,
@@ -211,9 +252,12 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   }
 
   float ts = trajectorizer_->getTimeStep();
-  bool ok = optimizer_->optimize(traj_path, costmap_, cmds, people, speed, ts);
+  std::vector<std::vector<AgentStatus>> projected_people;
+  bool ok = optimizer_->optimize(traj_path, projected_people, costmap_, cmds,
+                                 people, speed, ts);
 
   local_path_pub_->publish(traj_path);
+  publish_people_traj(projected_people, global_plan_.header);
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;

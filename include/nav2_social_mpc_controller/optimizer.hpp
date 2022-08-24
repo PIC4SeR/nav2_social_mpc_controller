@@ -36,6 +36,7 @@
 #include "nav2_social_mpc_controller/curvature_cost_function.hpp"
 #include "nav2_social_mpc_controller/distance_cost_function.hpp"
 #include "nav2_social_mpc_controller/obstacle_cost_function.hpp"
+#include "nav2_social_mpc_controller/sfm.hpp"
 #include "nav2_social_mpc_controller/social_work_function.hpp"
 
 #include "people_msgs/msg/people.hpp"
@@ -190,6 +191,7 @@ public:
    * @return false
    */
   bool optimize(nav_msgs::msg::Path &path,
+                std::vector<std::vector<AgentStatus>> &people_proj,
                 const nav2_costmap_2d::Costmap2D *costmap,
                 const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
                 const people_msgs::msg::People &people,
@@ -202,10 +204,14 @@ public:
       return false;
     }
 
-    distance_w_ = 0.2;
-    socialwork_w_ = 10.0;
-    obstacle_w_ = 3.0;
-    curvature_w_ = 1.0;
+    distance_w_ = 0.3; // 0.2;
+    // 1.0-low effect
+    // 0.01-no effect;
+    // 10.0-too much;
+    // 5.0-not good effect;
+    socialwork_w_ = 3.0;
+    obstacle_w_ = 0.1; // 3.0;
+    curvature_w_ = 100.0;
     curvature_angle_min_ = M_PI / 15.0;
 
     // Create costmap grid
@@ -222,6 +228,12 @@ public:
     // optimizer
     std::vector<AgentStatus> initial_status =
         format_to_optimize(path, cmds, speed, time_step);
+
+    // compute the future people position according to the SFM for each point of
+    // the robot trajectory
+    std::vector<std::vector<AgentStatus>> projected_people =
+        project_people(init_people, initial_status, time_step);
+    people_proj = projected_people;
 
     std::vector<position> ini_positions;
     std::vector<heading> ini_headings;
@@ -261,25 +273,34 @@ public:
     // Set up a cost function per point into the path
     for (unsigned int i = 0; i < optim_status.size(); i++) {
 
+      // --------------------------------------------
+      //   Obstacle cost
+      // --------------------------------------------
       // ObstacleCostFunction *obs_cost_function =
       //     new ObstacleCostFunction(obstacle_w_, costmap,
       //     costmap_interpolator);
-      // ceres::CostFunction *obs_cost_function =
-      //     new AutoDiffCostFunction<ObstacleCostFunction, 1, 2>(
-      //         new ObstacleCostFunction(obstacle_w_, costmap,
-      //                                  costmap_interpolator));
-      // problem.AddResidualBlock(obs_cost_function, NULL,
-      //                          optim_positions[i].params);
+      ceres::CostFunction *obs_cost_function =
+          new AutoDiffCostFunction<ObstacleCostFunction, 1, 2>(
+              new ObstacleCostFunction(obstacle_w_, costmap,
+                                       costmap_interpolator));
+      problem.AddResidualBlock(obs_cost_function, NULL,
+                               optim_positions[i].params);
       // problem.AddResidualBlock(cost_function->AutoDiff(), loss_function,
       //                         optim_status[i].data());
 
+      // --------------------------------------------
+      //   Social work
+      // --------------------------------------------
       ceres::CostFunction *social_work_function =
           new AutoDiffCostFunction<SocialWorkFunction, 1, 2, 2, 2>(
-              new SocialWorkFunction(socialwork_w_, init_people));
+              new SocialWorkFunction(socialwork_w_, projected_people[i]));
       problem.AddResidualBlock(
           social_work_function, NULL, optim_positions[i].params,
           ini_headings[i].params, ini_velocities[i].params);
 
+      // --------------------------------------------
+      //   Distance cost
+      // --------------------------------------------
       Eigen::Matrix<double, 2, 1> point(ini_positions[i].params[0],
                                         ini_positions[i].params[1]);
       ceres::CostFunction *distance_cost_function =
@@ -288,6 +309,9 @@ public:
       problem.AddResidualBlock(distance_cost_function, NULL,
                                optim_positions[i].params);
 
+      // --------------------------------------------
+      //   curvature cost
+      // --------------------------------------------
       if (i < optim_status.size() - 2) {
         CostFunction *curvature_cost_function =
             new AutoDiffCostFunction<CurvatureCostFunction, 1, 2, 2, 2>(
@@ -420,7 +444,7 @@ private:
       r(0, 0) = path.poses[i].pose.position.x;
       r(1, 0) = path.poses[i].pose.position.y;
       r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
-      r(3, 0) = i; // t;
+      r(3, 0) = i * timestep;
 
       // t += timestep;
 
@@ -438,105 +462,105 @@ private:
     return robot_status;
   }
 
-  // std::vector<std::vector<AgentStatus>>
-  // format_to_optimize2(nav_msgs::msg::Path &path,
-  //                     const std::vector<geometry_msgs::msg::TwistStamped>
-  //                     &cmds, const std::vector<sfm::Agent> &people, const
-  //                     geometry_msgs::msg::Twist &speed, const float timestep)
-  //                     {
+  // we project the people state for each time step of the robot path
+  std::vector<std::vector<AgentStatus>>
+  project_people(const std::vector<AgentStatus> &init_people,
+                 const std::vector<AgentStatus> &robot_path,
+                 const float &timestep) {
 
-  //   // we check the timestep and the path size in order to cut the path
-  //   // to a maximum duration.
-  //   float maxtime = 5.0;
-  //   // t = size * timestep
-  //   int maxsize = (int)round(maxtime / timestep);
-  //   if ((int)path.poses.size() > maxsize) {
-  //     std::vector<geometry_msgs::msg::PoseStamped> p(
-  //         path.poses.begin(), (path.poses.begin() + (maxsize)));
-  //     path.poses = p;
-  //   }
+    double naive_goal_time = 3.0; // secs
+    // double people_desired_vel = 1.0;
+    std::vector<std::vector<AgentStatus>> people_traj;
+    people_traj.push_back(init_people);
 
-  //   std::vector<sfm::Agent> agents;
+    std::vector<sfm_controller::Agent> agents;
 
-  //   // robot as sfm agent
-  //   sfm::Agent sfmrobot;
-  //   sfmrobot.desiredVelocity = 0.5;
-  //   sfmrobot.radius = 0.4;
-  //   sfmrobot.id = 0;
-  //   agents.push_back(sfmrobot);
+    // transform people to sfm agents
+    for (unsigned int i = 0; i < init_people.size(); i++) {
 
-  //   for (auto person : people) {
-  //     agents.push_back(person);
-  //     // for the moment we consider no more than 4 agents (robot and 3
-  //     // people)
-  //     if (agents.size() == 4)
-  //       break;
-  //   }
+      // if person not valid, skip it
+      if (init_people[i][3] == -1)
+        continue;
 
-  //   std::vector<std::vector<AgentStatus>> status;
-  //   for (unsigned int i = 0; i < path.poses.size(); i++) {
-  //     std::vector<AgentStatus> agentsStatus;
+      sfm_controller::Agent a;
+      a.id = i + 1;
+      a.position << init_people[i][0], init_people[i][1];
+      a.yaw = init_people[i][2];
+      a.linearVelocity = init_people[i][4];
+      a.angularVelocity = init_people[i][5];
+      // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
+      a.velocity << a.linearVelocity * cos(a.yaw),
+          a.linearVelocity * sin(a.yaw);
+      a.desiredVelocity = a.linearVelocity; // people_desired_vel; // could be
+                                            // computed somehow???
+      a.radius = 0.35;
+      // compute goal with the Constant Velocity Model
+      sfm_controller::Goal g;
+      g.radius = 0.25;
+      Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
+      g.center = gpos;
+      a.goals.push_back(g);
+      // Fill the obstacles
+      // std::vector<utils::Vector2d> obstacles1;
+      // std::vector<utils::Vector2d> obstacles2;
+      agents.push_back(a);
+    }
 
-  //     // Robot
-  //     AgentStatus r;
-  //     r(0, 0) = path.poses[i].pose.position.x;
-  //     r(1, 0) = path.poses[i].pose.position.y;
-  //     r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
-  //     r(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
+    // compute for each robot state of the path
+    for (unsigned int i = 0; i < robot_path.size() - 1; i++) {
 
-  //     if (i == 0) {
-  //       // Robot vel
-  //       r(4, 0) = speed.linear.x;
-  //       r(5, 0) = speed.angular.z;
-  //       agentsStatus.push_back(r);
-  //       // Agents
-  //       for (auto p : agents) {
-  //         AgentStatus a;
-  //         a(0, 0) = p.position.getX();
-  //         a(1, 0) = p.position.getY();
-  //         a(2, 0) = p.yaw.toRadian();
-  //         a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
-  //         a(4, 0) = p.linearVelocity;
-  //         a(5, 0) = p.angularVelocity;
-  //         agentsStatus.push_back(a);
-  //       }
-  //     } else {
-  //       // Robot vel
-  //       r(4, 0) = cmds[i - 1].twist.linear.x;
-  //       r(5, 0) = cmds[i - 1].twist.angular.z;
-  //       agentsStatus.push_back(r);
+      // robot as sfm agent
+      sfm_controller::Agent sfmrobot;
+      sfmrobot.desiredVelocity = 0.5;
+      sfmrobot.radius = 0.4;
+      sfmrobot.id = 0;
+      sfmrobot.position << robot_path[i][0], robot_path[i][1];
+      sfmrobot.yaw = robot_path[i][2];
+      sfmrobot.linearVelocity = robot_path[i][4];
+      sfmrobot.angularVelocity = robot_path[i][5];
+      // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
+      sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw),
+          sfmrobot.linearVelocity * sin(sfmrobot.yaw);
+      sfm_controller::Goal g;
+      g.radius = 0.25;
+      Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
+      g.center = gpos;
+      sfmrobot.goals.push_back(g);
 
-  //       // robot as sfm agent
-  //       agents[0].position.setX(path.poses[i - 1].pose.position.x);
-  //       agents[0].position.setY(path.poses[i - 1].pose.position.y);
-  //       agents[0].yaw.fromRadian(
-  //           tf2::getYaw(path.poses[i - 1].pose.orientation));
-  //       agents[0].linearVelocity = cmds[i - 1].twist.linear.x;
-  //       agents[0].angularVelocity = cmds[i - 1].twist.angular.z;
-  //       agents[0].velocity.setX(agents[0].linearVelocity);
+      // add the robot to the agents
+      agents.push_back(sfmrobot);
 
-  //       // Project the people movement according to the SFM
-  //       // Compute Social Forces
-  //       sfm::SFM.computeForces(agents);
-  //       // update agents
-  //       sfm::SFM.updatePosition(agents, timestep);
+      // Compute Social Forces
+      sfm_controller::SFM.computeForces(agents);
+      // Project the people movement according to the SFM
+      sfm_controller::SFM.updatePosition(agents, timestep);
 
-  //       // we avoid agent[0] which is the robot
-  //       for (unsigned int j = 1; j < agents.size(); j++) {
-  //         AgentStatus a;
-  //         a(0, 0) = agents[j].position.getX();
-  //         a(1, 0) = agents[j].position.getY();
-  //         a(2, 0) = agents[j].yaw.toRadian();
-  //         a(3, 0) = rclcpp::Time(path.poses[i].header.stamp).seconds();
-  //         a(4, 0) = agents[j].linearVelocity;
-  //         a(5, 0) = agents[j].angularVelocity;
-  //         agentsStatus.push_back(a);
-  //       }
-  //     }
-  //     status.push_back(agentsStatus);
-  //   }
-  //   return status;
-  // }
+      // remove the robot (last agent)
+      agents.pop_back();
+
+      // Take the people agents
+      std::vector<AgentStatus> humans;
+      for (auto p : agents) {
+        AgentStatus as;
+        as(0, 0) = p.position[0];
+        as(1, 0) = p.position[1];
+        as(2, 0) = p.yaw;
+        as(3, 0) = (i + 1) * timestep;
+        as(4, 0) = p.linearVelocity;
+        as(5, 0) = p.angularVelocity;
+        humans.push_back(as);
+      }
+      // fill with empty agents if needed
+      while (humans.size() < init_people.size()) {
+        AgentStatus ag;
+        ag.setZero();
+        ag(3, 0) = -1.0;
+        humans.push_back(ag);
+      }
+      people_traj.push_back(humans);
+    }
+    return people_traj;
+  }
 
   /**
    * @brief Build problem method
@@ -559,7 +583,8 @@ private:
   //     //     costmap->getCharMap(), 0, costmap->getSizeInCellsY(), 0,
   //     //     costmap->getSizeInCellsX());
   //     // auto costmap_interpolator =
-  //     // std::make_shared<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>(
+  //     //
+  //     std::make_shared<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>(
   //     //         *costmap_grid_);
 
   //     // Create residual blocks
@@ -589,8 +614,8 @@ private:
   //     direction
   //     //     // change)
   //     //     if (!is_cusp && i > (params.keep_start_orientation ? 1 : 0) &&
-  //     //         i < path_optim.size() - (params.keep_goal_orientation ? 2 :
-  //     1) &&
+  //     //         i < path_optim.size() - (params.keep_goal_orientation ? 2
+  //     : 1) &&
   //     //         static_cast<int>(i - last_i) <
   //     params.path_downsampling_factor) {
   //     //       continue;
@@ -600,14 +625,16 @@ private:
   //     //   // keep distance inequalities between poses
   //     //   // (some might have been downsampled while others might not)
   //     //   double current_segment_len =
-  //     //       (path_optim[i] - path_optim[last_i]).block<2, 1>(0, 0).norm();
+  //     //       (path_optim[i] - path_optim[last_i]).block<2, 1>(0,
+  //     0).norm();
 
   //     //   // forget cost functions which don't have chance to be part of a
   //     cusp
   //     //   zone potential_cusp_funcs_len += current_segment_len; while
   //     //   (!potential_cusp_funcs.empty() &&
   //     //          potential_cusp_funcs_len > cusp_half_length) {
-  //     //     potential_cusp_funcs_len -= potential_cusp_funcs.front().first;
+  //     //     potential_cusp_funcs_len -=
+  //     potential_cusp_funcs.front().first;
   //     //     potential_cusp_funcs.pop_front();
   //     //   }
 
@@ -640,9 +667,11 @@ private:
   //     //       costmap_weight =
   //     //           params.cusp_costmap_weight *
   //     //               (1.0 - len_since_cusp / cusp_half_length) +
-  //     //           params.costmap_weight * len_since_cusp / cusp_half_length;
+  //     //           params.costmap_weight * len_since_cusp /
+  //     cusp_half_length;
   //     //     }
-  //     //     SmootherCostFunction *cost_function = new SmootherCostFunction(
+  //     //     SmootherCostFunction *cost_function = new
+  //     SmootherCostFunction(
   //     //         path[last_i].template block<2, 1>(0, 0),
   //     //         (last_was_cusp ? -1 : 1) * last_segment_len /
   //     //         current_segment_len, last_is_reversing, costmap,
@@ -676,7 +705,8 @@ private:
   //     // if (posesToOptimize <= 0) {
   //     //   return false; // nothing to optimize
   //     // }
-  //     // // first two and last two points are constant (to keep start and end
+  //     // // first two and last two points are constant (to keep start and
+  //     end
   //     // // direction)
   //     // problem.SetParameterBlockConstant(path_optim.front().data());
   //     // if (params.keep_start_orientation) {

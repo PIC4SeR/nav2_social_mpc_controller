@@ -22,10 +22,12 @@
 
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "nav2_core/controller.hpp"
+#include "nav2_social_mpc_controller/obstacle_distance_interface.h"
 #include "nav2_social_mpc_controller/optimizer.hpp"
 #include "nav2_social_mpc_controller/path_trajectorizer.hpp"
 #include "nav2_social_mpc_controller/people_interface.h"
 #include "nav2_util/odometry_utils.hpp"
+#include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "pluginlib/class_loader.hpp"
@@ -141,8 +143,8 @@ protected:
    * @return false
    */
   bool transformPoint(const std::string frame,
-                      const geometry_msgs::msg::Point &in_point,
-                      geometry_msgs::msg::Point &out_point) const;
+                      const geometry_msgs::msg::PointStamped &in_point,
+                      geometry_msgs::msg::PointStamped &out_point) const;
 
   // /**
   //  * @brief Get lookahead distance
@@ -246,6 +248,7 @@ protected:
   std::unique_ptr<PathTrajectorizer> trajectorizer_;
   std::unique_ptr<Optimizer> optimizer_;
   std::unique_ptr<PeopleInterface> people_interface_;
+  std::unique_ptr<ObstacleDistInterface> obsdist_interface_;
   OptimizerParams optimizer_params_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D *costmap_;

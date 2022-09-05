@@ -12,6 +12,8 @@ find_package(angles REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(people_msgs REQUIRED)
+find_package(obstacle_distance_msgs REQUIRED)
+find_package(obstacle_distance REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2 REQUIRED)
@@ -32,6 +34,8 @@ set(dependencies
   rclcpp
   geometry_msgs
   people_msgs
+  obstacle_distance_msgs
+  obstacle_distance
   nav2_costmap_2d
   pluginlib
   nav_msgs
@@ -47,6 +51,7 @@ add_library(${library_name} SHARED
         src/path_trajectorizer.cpp
         src/social_mpc_controller.cpp
         src/people_interface.cpp
+        src/obstacle_distance_interface.cpp
 )
 
 target_link_libraries(${library_name} ${CERES_LIBRARIES})

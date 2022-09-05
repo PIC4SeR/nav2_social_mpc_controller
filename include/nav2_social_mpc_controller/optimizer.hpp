@@ -39,6 +39,7 @@
 #include "nav2_social_mpc_controller/sfm.hpp"
 #include "nav2_social_mpc_controller/social_work_function.hpp"
 
+#include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
 
 // the agents status contain 6 values:
@@ -193,6 +194,7 @@ public:
   bool optimize(nav_msgs::msg::Path &path,
                 std::vector<std::vector<AgentStatus>> &people_proj,
                 const nav2_costmap_2d::Costmap2D *costmap,
+                const obstacle_distance_msgs::msg::ObstacleDistance &obstacles,
                 const std::vector<geometry_msgs::msg::TwistStamped> &cmds,
                 const people_msgs::msg::People &people,
                 const geometry_msgs::msg::Twist &speed, const float time_step) {
@@ -204,6 +206,7 @@ public:
       return false;
     }
 
+    frame_ = path.header.frame_id;
     distance_w_ = 0.3; // 0.2;
     // 1.0-low effect
     // 0.01-no effect;
@@ -222,6 +225,18 @@ public:
         std::make_shared<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>(
             *costmap_grid_);
 
+    // Grid2D(const T* data,
+    //      const int row_begin,
+    //      const int row_end,
+    //      const int col_begin,
+    //      const int col_end)
+    // obsdist_grid_ = std::make_shared<ceres::Grid2D<float>>(
+    //     &obstacles.distances, 0, obstacles.info.height, 0,
+    //     obstacles.info.width);
+    // auto obsdist_interpolator =
+    //     std::make_shared<ceres::BiCubicInterpolator<ceres::Grid2D<float>>>(
+    //         *obsdist_grid_);
+
     std::vector<AgentStatus> init_people = people_to_status(people);
 
     // Transform the initial solution path to a format suitable for the
@@ -231,8 +246,10 @@ public:
 
     // compute the future people position according to the SFM for each point of
     // the robot trajectory
+    // WATCH OUT! people, robot and obstacles must be in the same coordinate
+    // frame!!!
     std::vector<std::vector<AgentStatus>> projected_people =
-        project_people(init_people, initial_status, time_step);
+        project_people(init_people, initial_status, obstacles, time_step);
     people_proj = projected_people;
 
     std::vector<position> ini_positions;
@@ -466,12 +483,17 @@ private:
   std::vector<std::vector<AgentStatus>>
   project_people(const std::vector<AgentStatus> &init_people,
                  const std::vector<AgentStatus> &robot_path,
+                 const obstacle_distance_msgs::msg::ObstacleDistance &od,
                  const float &timestep) {
 
     double naive_goal_time = 3.0; // secs
     // double people_desired_vel = 1.0;
     std::vector<std::vector<AgentStatus>> people_traj;
     people_traj.push_back(init_people);
+
+    // I NEED TO ADD THE CLOSER OBSTACLE POSITION TO EACH AGENT
+    // FOR EACH STEP. THAT OBSTACLE POSITION MUST BE IN THE
+    // SAME COORDINATE FRAME THAT THE AGENT POSITION.
 
     std::vector<sfm_controller::Agent> agents;
 
@@ -503,6 +525,7 @@ private:
       // Fill the obstacles
       // std::vector<utils::Vector2d> obstacles1;
       // std::vector<utils::Vector2d> obstacles2;
+      a.obstacles2.push_back(computeObstacle(a.position, od));
       agents.push_back(a);
     }
 
@@ -538,6 +561,12 @@ private:
       // remove the robot (last agent)
       agents.pop_back();
 
+      // update agents obstacles
+      for (unsigned int j = 0; j < agents.size(); j++) {
+        agents[j].obstacles2.clear();
+        agents[j].obstacles2.push_back(computeObstacle(agents[j].position, od));
+      }
+
       // Take the people agents
       std::vector<AgentStatus> humans;
       for (auto p : agents) {
@@ -560,6 +589,57 @@ private:
       people_traj.push_back(humans);
     }
     return people_traj;
+  }
+
+  Eigen::Vector2d
+  computeObstacle(const Eigen::Vector2d &apos,
+                  const obstacle_distance_msgs::msg::ObstacleDistance &od) {
+
+    // if the distancegrid frame is different from the path frame
+    // we must transform the agent position to the general frame
+    // if (ob.header.frame_id != frame_) {
+    // TODO: think about how we could do the transformation here
+    // }
+
+    // map point (person) to cell in the distance grid
+    unsigned int xcell = (unsigned int)floor(
+        (apos[0] - od.info.origin.position.x) / od.info.resolution);
+    unsigned int ycell = (unsigned int)floor(
+        (apos[1] - od.info.origin.position.y) / od.info.resolution);
+    // cell to index of the array
+    if (xcell >= (unsigned int)od.info.width) {
+      xcell = (unsigned int)(od.info.width - 1);
+    }
+    if (ycell >= (unsigned int)od.info.height) {
+      ycell = (unsigned int)(od.info.height - 1);
+    }
+    unsigned int index = xcell + ycell * od.info.width;
+
+    float dist = od.distances[index]; // not used
+    unsigned int ob_idx = od.indexes[index];
+
+    // index to cell
+    if (ob_idx >= (od.info.width * od.info.height)) {
+      ob_idx = (od.info.width * od.info.height) - 1;
+    }
+    // const div_t result = div(ob_idx, (int)od.info.width);
+    // xcol = result.rem;
+    // yrow = result.quot;
+    ycell = floor(ob_idx / od.info.width);
+    xcell = ob_idx % od.info.width;
+
+    // cell to world point (obstacle)
+    float x = xcell * od.info.resolution + od.info.origin.position.x;
+    float y = ycell * od.info.resolution + od.info.origin.position.y;
+    Eigen::Vector2d obstacle(x, y);
+
+    // vector between person and obstacle
+    Eigen::Vector2d diff = apos - obstacle;
+
+    std::cout << "a.x: " << apos[0] << " a.y: " << apos[1] << std::endl;
+    std::cout << "obs dist: " << dist << " position x: " << x << " y: " << y
+              << std::endl;
+    return diff;
   }
 
   /**
@@ -730,6 +810,8 @@ private:
   double curvature_angle_min_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
+  std::shared_ptr<ceres::Grid2D<float>> obsdist_grid_;
+  std::string frame_;
 };
 } // namespace nav2_social_mpc_controller
 

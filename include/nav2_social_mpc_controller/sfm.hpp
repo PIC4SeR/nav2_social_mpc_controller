@@ -37,7 +37,8 @@ struct Forces {
 
 struct Parameters {
   Parameters()
-      : forceFactorDesired(2.0), forceFactorObstacle(10),
+      : forceFactorDesired(2.0),
+        forceFactorObstacle(20), // forceFactorObstacle(10),
         forceSigmaObstacle(0.2), forceFactorSocial(2.1),
         forceFactorGroupGaze(3.0), forceFactorGroupCoherence(2.0),
         forceFactorGroupRepulsion(1.0), lambda(2.0), gamma(0.35), n(2.0),
@@ -61,6 +62,11 @@ struct Goal {
   Eigen::Vector2d center;
   double radius;
 };
+
+// struct closest_obs {
+//   Eigen::Vector2d direction;
+//   double distance;
+// };
 
 struct Agent {
   Agent()
@@ -97,7 +103,10 @@ struct Agent {
 
   Forces forces;
   Parameters params;
+  // obstacles1 contains the positions (x,y) of the obstacles
   std::vector<Eigen::Vector2d> obstacles1;
+  // obstacles2 contains the vectors between the agent
+  // and the obstacle
   std::vector<Eigen::Vector2d> obstacles2;
 };
 
@@ -171,7 +180,7 @@ inline void SocialForceModel::computeObstacleForce(Agent &agent) const {
           minDiff.normalized();
     }
     for (unsigned i = 0; i < agent.obstacles2.size(); i++) {
-      Eigen::Vector2d minDiff = agent.position - agent.obstacles2[i];
+      Eigen::Vector2d minDiff = agent.obstacles2[i];
       double distance = minDiff.norm() - agent.radius;
       agent.forces.obstacleForce +=
           agent.params.forceFactorObstacle *

@@ -105,6 +105,9 @@ void SocialMPCController::configure(
   // people interface
   people_interface_ = std::make_unique<PeopleInterface>(node);
 
+  // obstacle distance transform
+  obsdist_interface_ = std::make_unique<ObstacleDistInterface>(node);
+
   global_path_pub_ =
       node->create_publisher<nav_msgs::msg::Path>("robot_global_plan", 1);
   // carrot_pub_ = node->create_publisher<geometry_msgs::msg::PointStamped>(
@@ -242,19 +245,26 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   if (people.header.frame_id != traj_path.header.frame_id) {
     // transform people to the global frame
     for (auto p : people.people) {
-      geometry_msgs::msg::Point point;
-      if (!transformPoint(global_plan_.header.frame_id, p.position, point)) {
+      geometry_msgs::msg::PointStamped out_point;
+      geometry_msgs::msg::PointStamped in_point;
+      in_point.point = p.position;
+      in_point.header = people.header;
+      if (!transformPoint(global_plan_.header.frame_id, in_point, out_point)) {
         throw nav2_core::PlannerException(
             "Unable to transform people point into global plan's frame");
       }
-      p.position = point;
+      p.position = out_point.point;
     }
   }
 
+  // Get the distance transform
+  obstacle_distance_msgs::msg::ObstacleDistance od =
+      obsdist_interface_->getDistanceTransform();
+
   float ts = trajectorizer_->getTimeStep();
   std::vector<std::vector<AgentStatus>> projected_people;
-  bool ok = optimizer_->optimize(traj_path, projected_people, costmap_, cmds,
-                                 people, speed, ts);
+  bool ok = optimizer_->optimize(traj_path, projected_people, costmap_, od,
+                                 cmds, people, speed, ts);
 
   local_path_pub_->publish(traj_path);
   publish_people_traj(projected_people, global_plan_.header);
@@ -565,8 +575,8 @@ bool SocialMPCController::transformPose(
 }
 
 bool SocialMPCController::transformPoint(
-    const std::string frame, const geometry_msgs::msg::Point &in_point,
-    geometry_msgs::msg::Point &out_point) const {
+    const std::string frame, const geometry_msgs::msg::PointStamped &in_point,
+    geometry_msgs::msg::PointStamped &out_point) const {
 
   try {
     tf_->transform(in_point, out_point, frame, transform_tolerance_);

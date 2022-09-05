@@ -114,6 +114,7 @@ void PathTrajectorizer::configure(
                        transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
 
+  RCLCPP_INFO(logger_, "-------------------------------------");
   RCLCPP_INFO(logger_, "Path Trajectorizer params:");
   RCLCPP_INFO(logger_, "omnidirectional: %i", (int)omnidirectional_);
   RCLCPP_INFO(logger_, "desired_linear_vel: %.2f m/s", desired_linear_vel_);
@@ -122,6 +123,7 @@ void PathTrajectorizer::configure(
   RCLCPP_INFO(logger_, "time_step: %.2f secs", time_step_);
   RCLCPP_INFO(logger_, "max_time: %.2f secs", max_time);
   RCLCPP_INFO(logger_, "base_frame: %s", base_frame_.c_str());
+  RCLCPP_INFO(logger_, "-------------------------------------");
 
   max_steps_ = (int)round(max_time / time_step_);
 

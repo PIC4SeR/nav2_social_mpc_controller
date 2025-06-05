@@ -87,10 +87,14 @@ Keeps the robot's velocity terms near the desired values.
 Prevents the optimizer from computing drastically different velocity terms in subsequent time steps.
 
 ---
-## Parameters example
+## Example Configuration: `FollowPath`
+
+Below is an example YAML configuration for the `FollowPath` behavior using the `nav2_social_mpc_controller::SocialMPCController` plugin:
+
+```yaml
 FollowPath:
-      plugin: "nav2_social_mpc_controller::SocialMPCController"
-      trajectorizer:
+    plugin: "nav2_social_mpc_controller::SocialMPCController"
+    trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 2.0
@@ -99,7 +103,7 @@ FollowPath:
         base_frame: "base_link"
         time_step: 0.05
         max_time: 1.5
-      optimizer:
+    optimizer:
         linear_solver_type: "DENSE_SCHUR"
         param_tol: 1.0e-9
         fn_tol: 1.0e-5
@@ -112,16 +116,21 @@ FollowPath:
         current_path_weight: 1.0
         current_cmds_weight: 0.5
         weights:
-          distance_weight: 20.0
-          social_weight: 720.0 #400.0
-          velocity_weight: 10.0
-          angle_weight: 250.0
-          agent_angle_weight: 40.0 #50.0
-          proxemics_weight: 40.0
-          velocity_feasibility_weight: 5.0
-          goal_align_weight: 10.0
-          obstacle_weight: 0.13 #0.15
-          #obstacle_weight: 0.000005
+            distance_weight: 20.0
+            social_weight: 720.0 #400.0
+            velocity_weight: 10.0
+            angle_weight: 250.0
+            agent_angle_weight: 40.0 #50.0
+            proxemics_weight: 40.0
+            velocity_feasibility_weight: 5.0
+            goal_align_weight: 10.0
+            obstacle_weight: 0.13 #0.15
+            #obstacle_weight: 0.000005
+```
+
+This configuration sets parameters for trajectory generation and optimization, including weights for each cost function described above.
+
+---
 
 
 ## License

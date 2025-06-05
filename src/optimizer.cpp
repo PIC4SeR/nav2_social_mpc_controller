@@ -148,9 +148,13 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                          std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                          const geometry_msgs::msg::Twist& speed, const float time_step)
 {
+  // transfrom people to agent status factor
+  AgentsStates init_people = people_to_status(people);
+
   // Path has always at least 2 points
   if (path.poses.size() < 2)
   {
+    RCLCPP_WARN(rclcpp::get_logger("optimizer"), "Path has less than 2 points, cannot optimize");
     return false;
   }
   frame_ = path.header.frame_id;
@@ -177,10 +181,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   nav_msgs::msg::Path previous_path = memory.previous_path;
   std::vector<geometry_msgs::msg::TwistStamped> previous_cmds = memory.previous_cmds;
-
-  // transfrom people to agent status factor
-
-  AgentsStates init_people = people_to_status(people);
 
   // use the projected path to make it into the a parametrized format
   AgentsStates optim_status = format_to_optimize(path, previous_path, cmds, previous_cmds, speed, current_path_w,

@@ -122,7 +122,8 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
 {
   if (path.poses.size() < 2)
   {
-    return true;
+    RCLCPP_WARN(logger_, "Path has less than 2 poses, cannot trajectorize");
+    return false;
   }
   rclcpp::Time t = clock_->now();
   nav_msgs::msg::Path new_path;

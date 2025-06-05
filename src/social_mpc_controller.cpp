@@ -175,8 +175,18 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   // Trajectorize the path
   nav_msgs::msg::Path traj_path = transformed_plan;
   std::vector<geometry_msgs::msg::TwistStamped> cmds;
-  trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
+  // trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
 
+  if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
+  {
+    geometry_msgs::msg::TwistStamped cmd_vel;
+    cmd_vel.header = robot_pose.header;
+    cmd_vel.twist.linear.x = 0.1;  // Use the desired speed as a fallback
+    cmd_vel.twist.linear.y = 0.0;
+    cmd_vel.twist.angular.z = 0.0;  // No angular velocity
+    RCLCPP_WARN(logger_, "Approaching goal without a valid trajectory, using fallback cmd_vel");
+    return cmd_vel;
+  }
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
   // float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
 
@@ -187,13 +197,16 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   // only use people in the FOV of the robot, in this case (-90°,90° supposed )
   for (auto p : people_unf.people)
   {
-    float dx = p.position.x - robot_pose.pose.position.x;
-    float dy = p.position.y - robot_pose.pose.position.y;
-    float dist = sqrt(dx * dx + dy * dy);  // TODO: use infinity norm instead of euclidean distance
+    uint mx, my;
+    if (!costmap_->worldToMap(p.position.x, p.position.y, mx, my))
+    {
+      RCLCPP_DEBUG(logger_, "Person %s is not in the costmap", p.name.c_str());
+      continue;
+    }
     float angle_to_person = atan2(p.position.y - robot_pose.pose.position.y, p.position.x - robot_pose.pose.position.x);
     float robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
     float relative_angle = angles::shortest_angular_distance(robot_yaw, angle_to_person);
-    if (dist < 3.0 && fabs(relative_angle) < fov_angle_)
+    if (fabs(relative_angle) < fov_angle_)
     {
       people.people.push_back(p);
     }
@@ -224,35 +237,27 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
 
-  bool ok = optimizer_->optimize(traj_path, projected_people, costmap_, transformed_od, cmds, people, speed, ts);
-
-  local_path_pub_->publish(traj_path);
+  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_, transformed_od, cmds, people, speed, ts);
+  if (!optimized)
+  {
+    RCLCPP_WARN(logger_, "Optimization failed, using initial commands");
+    cmds = init_cmds;
+  }
   publish_people_traj(projected_people, transformed_plan.header);
+  local_path_pub_->publish(traj_path);
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
-  if (ok)
-  {
-    cmd_vel.header = cmds[0].header;
-    cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
-    cmd_vel.twist.linear.y = 0;
-    cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
-    RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
-  }
-  else
-  {
-    RCLCPP_WARN(logger_, "Optimization failed!!!\n");
-    cmd_vel.header = init_cmds[0].header;
-    cmd_vel.twist.linear.x = init_cmds[0].twist.linear.x;
-    cmd_vel.twist.linear.y = init_cmds[0].twist.linear.y;
-    cmd_vel.twist.angular.z = init_cmds[0].twist.angular.z;
-  }
+  cmd_vel.header = cmds[0].header;
+  cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
+  cmd_vel.twist.linear.y = 0;
+  cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
+  RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
   return cmd_vel;
 }
 
 void SocialMPCController::setPlan(const nav_msgs::msg::Path& path)
 {
-  // TODO: Use path handler
   path_handler_->setPlan(path);
 }
 

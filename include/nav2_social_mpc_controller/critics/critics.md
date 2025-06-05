@@ -4,19 +4,28 @@ This document describes the custom critics used in the `nav2_social_mpc_controll
 
 ---
 ## Optimization variables
+
 The variables to optimize are the angular and linear speed of the robot in the subsequent time steps.
 This is because the future position of the robot is optimized by inserting the subsequent speeds to project the state of the robot 
 using the differential drive model.
 
+---
+
 ## General passed parameters
+
 **Weights:**
 Each critic possesses its weight to determine its influence on the overall robot behavior.
+
 **Robot params:**
-The initial position and orientation of the robot is passed for the critics that require forward projection of the state,
+The initial position and orientation of the robot is passed for the critics that require forward projection of the state.
+
 **Path params:**
 Some critics feature parameters containg the trajectorized path points, either positions or headings.
+
 **Social params:**
 The two social critics feature the information about the predicted agents positions and velocities.
+
+---
 
 ## Agent Angle Cost Function
 

@@ -1,4 +1,4 @@
-#Critics Overview
+# Critics Overview
 
 This document describes the custom critics used in the `nav2_social_mpc_controller` package. Critics are cost functions that guide the robot's behavior during navigation, ensuring safety, efficiency, and social compliance.
 
@@ -47,7 +47,7 @@ Uses a bicubic interpolator to estimate the cost of a robot's position in future
 Uses the Social Force Model (SFM) to consider social work as a cost, aiming to minimize the social impact of the robot.
 
 **Note:**  
-Directly optimizing social work led to undesirable behavior (robot overlapping with agents). This was mitigated by using a `1/(social work)` cost, and further refined to smooth the forces.
+Directly optimizing social work led to undesirable behavior (robot overlapping with agents, where the forces between robot and agent become null). This was mitigated by using a `1/(social work)` cost, and further refined to smooth the forces.
 
 ---
 

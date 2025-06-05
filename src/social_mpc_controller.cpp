@@ -55,14 +55,14 @@ void SocialMPCController::configure(const rclcpp_lifecycle::LifecycleNode::WeakP
   tf_ = tf;
   plugin_name_ = name;
   logger_ = node->get_logger();
-
-  double transform_tolerance = 0.1;
-
+  double transform_tolerance;
   declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.5));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".fov_angle", rclcpp::ParameterValue(M_PI / 4));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
-
+  node->get_parameter(plugin_name_ + ".fov_angle", fov_angle_);
   // Create the trajectorizer
   trajectorizer_ = std::make_unique<PathTrajectorizer>();
   trajectorizer_->configure(node, name, tf_);
@@ -178,7 +178,7 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
 
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
-  float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
+  // float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
 
   // Be careful, path and people must be in the same frame
   people_msgs::msg::People people_unf = people_interface_->getPeople();
@@ -190,11 +190,10 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
     float dx = p.position.x - robot_pose.pose.position.x;
     float dy = p.position.y - robot_pose.pose.position.y;
     float dist = sqrt(dx * dx + dy * dy);  // TODO: use infinity norm instead of euclidean distance
-    float fov_angle = M_PI / 4;            // TODO: make this a parameter
     float angle_to_person = atan2(p.position.y - robot_pose.pose.position.y, p.position.x - robot_pose.pose.position.x);
     float robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
     float relative_angle = angles::shortest_angular_distance(robot_yaw, angle_to_person);
-    if (dist < 3.0 && fabs(relative_angle) < fov_angle)
+    if (dist < 3.0 && fabs(relative_angle) < fov_angle_)
     {
       people.people.push_back(p);
     }
@@ -232,7 +231,7 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
 
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
-  if (ok && goal_distance > 0.45)
+  if (ok)
   {
     cmd_vel.header = cmds[0].header;
     cmd_vel.twist.linear.x = cmds[0].twist.linear.x;

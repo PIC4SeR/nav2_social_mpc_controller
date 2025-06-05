@@ -20,7 +20,7 @@ Each critic possesses its weight to determine its influence on the overall robot
 The initial position and orientation of the robot is passed for the critics that require forward projection of the state.
 
 **Path params:**
-Some critics feature parameters containg the trajectorized path points, either positions or headings.
+Some critics feature parameters containing the trajectorized path points, either positions or headings.
 
 **Social params:**
 The two social critics feature the information about the predicted agents positions and velocities.
@@ -68,9 +68,6 @@ Uses a bicubic interpolator to estimate the cost of a robot's position in future
 
 **Purpose:**  
 Uses the Social Force Model (SFM) to consider social work as a cost, aiming to minimize the social impact of the robot.
-
-**Note:**  
-Directly optimizing social work led to undesirable behavior (robot overlapping with agents, where the forces between robot and agent become null). This was mitigated by using a `1/(social work)` cost, and further refined to smooth the forces.
 
 ---
 

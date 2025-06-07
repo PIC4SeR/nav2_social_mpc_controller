@@ -45,6 +45,8 @@
 #include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/velocity_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/velocity_feasibility_cost_function.hpp"
+#include "nav2_social_mpc_controller/critics/proxemics_cost_function.hpp"
+
 #include "nav2_social_mpc_controller/sfm.hpp"
 #include "nav2_social_mpc_controller/trajectory_memory.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
@@ -87,6 +89,7 @@ struct OptimizerParams
   double velocity_feasibility_w_;
   double goal_align_w_;
   double obstacle_w_;
+  double proxemics_w_;
   float current_path_w;
   float current_cmds_w;
   float max_time;
@@ -227,6 +230,7 @@ private:
   double goal_align_w_;
   double velocity_w_;
   double curvature_w_;
+  double proxemics_w_;
   double curvature_angle_min_;
   float current_path_w;
   float current_cmds_w;

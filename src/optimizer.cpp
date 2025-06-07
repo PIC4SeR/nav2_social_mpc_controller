@@ -64,6 +64,8 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(weights + "angle_weight", angle_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "agent_angle_weight", rclcpp::ParameterValue(0.5));
   node->get_parameter(weights + "agent_angle_weight", agent_angle_w_);
+  nav2_util::declare_parameter_if_not_declared(node, weights + "proxemics_weight", rclcpp::ParameterValue(90.0));
+  node->get_parameter(weights + "proxemics_weight", proxemics_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "velocity_feasibility_weight",
                                                rclcpp::ParameterValue(0.5));
   node->get_parameter(weights + "velocity_feasibility_weight", velocity_feasibility_w_);
@@ -106,6 +108,7 @@ void Optimizer::initialize(const OptimizerParams params)
   velocity_w_ = params.velocity_w_;
   angle_w_ = params.angle_w_;
   agent_angle_w_ = params.agent_angle_w_;
+  proxemics_w_ = params.proxemics_w_;
   control_horizon_ = params.control_horizon_;
   parameter_block_length_ = params.parameter_block_length_;
   max_time = params.max_time;
@@ -259,18 +262,19 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     double counter_step = counter * time_step;
     if (people.people.size() != 0)
     {
-      auto* social_work_function_f =
-          SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], people_proj[0], evolving_poses[0].pose, speed,
-                                 counter_step, i, time_step, control_horizon, block_length);
-      auto* agent_angle_function_f =
-          AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], people_proj[0], evolving_poses[0].pose, i,
-                                 time_step, control_horizon, block_length);
+      auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
+                                                            counter_step, i, time_step, control_horizon, block_length);
+      auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
+                                                            i, time_step, control_horizon, block_length);
+      auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[i + 1], evolving_poses[0].pose,
+                                                         counter_step, i, time_step, control_horizon, block_length);
       if (i < control_horizon)
       {
         for (unsigned int j = 0; j <= i / block_length; j++)
         {
           agent_angle_function_f->AddParameterBlock(2);
           social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
         }
       }
       else
@@ -279,12 +283,15 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
         {
           agent_angle_function_f->AddParameterBlock(2);
           social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
         }
       }
       agent_angle_function_f->SetNumResiduals(1);
       social_work_function_f->SetNumResiduals(1);
+      proxemics_function_f->SetNumResiduals(1);
       problem.AddResidualBlock(agent_angle_function_f, NULL, parameter_blocks);
       problem.AddResidualBlock(social_work_function_f, NULL, parameter_blocks);
+      problem.AddResidualBlock(proxemics_function_f, NULL, parameter_blocks);
     }
     auto* velocity_function_f =
         VelocityCost::Create(velocity_w_, desired_linear_vel_, i, control_horizon, block_length);

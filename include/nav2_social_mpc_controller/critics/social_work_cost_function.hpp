@@ -58,8 +58,7 @@ class SocialWorkCost
 public:
   using SocialWorkCostFunction = ceres::DynamicAutoDiffCostFunction<SocialWorkCost>;
 
-  SocialWorkCost(double weight, const AgentsStates& agents_init, const AgentsStates& agents_zero,
-                 const geometry_msgs::msg::Pose& robot_init, const geometry_msgs::msg::Twist& robot_init_vel,
+  SocialWorkCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                  const double counter, unsigned int current_position, double time_step, unsigned int control_horizon,
                  unsigned int block_length);
 
@@ -72,9 +71,7 @@ public:
    *
    * @param weight The weight of the cost function.
    * @param agents_init A vector of AgentStatus representing the initial states of the agents.
-   * @param agents_zero A vector of AgentStatus representing the zero states of the agents.
    * @param robot_init The initial pose of the robot.
-   * @param robot_init_vel The initial velocity of the robot.
    * @param counter A counter value used in the computation.
    * @param current_position The current position index in the control sequence.
    * @param time_step The time step for the state update.
@@ -84,15 +81,12 @@ public:
    */
 
   inline static SocialWorkCostFunction* Create(double weight, const AgentsStates& agents_init,
-                                               const AgentsStates& agents_zero,
-                                               const geometry_msgs::msg::Pose& robot_init,
-                                               const geometry_msgs::msg::Twist& robot_init_vel, const double counter,
+                                               const geometry_msgs::msg::Pose& robot_init, const double counter,
                                                unsigned int current_position, double time_step,
                                                unsigned int control_horizon, unsigned int block_length)
   {
-    return new SocialWorkCostFunction(new SocialWorkCost(weight, agents_init, agents_zero, robot_init, robot_init_vel,
-                                                         counter, current_position, time_step, control_horizon,
-                                                         block_length));
+    return new SocialWorkCostFunction(new SocialWorkCost(weight, agents_init, robot_init, counter, current_position,
+                                                         time_step, control_horizon, block_length));
   }
 
   /**
@@ -111,7 +105,6 @@ public:
     // Compute robot social work
     Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
     Eigen::Matrix<T, 6, 1> robot;
-    Eigen::Matrix<T, 6, 1> robot_initial;
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
     robot(0, 0) = (T)new_position_x;                                                               // x
@@ -128,77 +121,54 @@ public:
       robot(4, 0) = parameters[(control_horizon_ - 1) / block_length_][0];  // lv
       robot(5, 0) = parameters[(control_horizon_ - 1) / block_length_][1];  // av
     }
-    robot_initial(0, 0) = (T)robot_init_.position.x;                // x
-    robot_initial(1, 0) = (T)robot_init_.position.y;                // y
-    robot_initial(2, 0) = (T)tf2::getYaw(robot_init_.orientation);  // yaw
-    robot_initial(3, 0) = (T)counter_;                              // t
-    robot_initial(4, 0) = (T)robot_init_vel_.linear.x;              // av
-    robot_initial(5, 0) = (T)robot_init_vel_.angular.z;             // lv
 
-    Eigen::Matrix<T, 2, 1> robot_sf =
-        computeSocialForce(robot, robot_initial, agents);  // Compute social force on robot
-    T wr = (T)robot_sf.squaredNorm();                      // Compute the squared norm of the social force on the robot
+    Eigen::Matrix<T, 2, 1> robot_sf = computeSocialForce(robot, agents);  // Compute social force on robot
+    T wr = (T)robot_sf.squaredNorm();  // Compute the squared norm of the social force on the robot
 
     // compute agents' social work provoked by the robot
     T wp = (T)0.0;
     Eigen::Matrix<T, 6, 3> robot_agent;
-    Eigen::Matrix<T, 6, 3> robot_agent_initial;
-    robot_agent.col(0) << robot;                  // Set the first column to the robot's current state
-    robot_agent_initial.col(0) << robot_initial;  // Set the first column to the robot's initial state
+    robot_agent.col(0) << robot;  // Set the first column to the robot's current state
     // we invalidate the other two agent
     // by setting t to -1
 
     robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the second column to an invalid state
     robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
-    robot_agent_initial.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0,
-        (T)0.0;  // Set the second column of initial state to an invalid state
-    robot_agent_initial.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0,
-        (T)0.0;  // Set the third column of initial state to an invalid state
-    for (unsigned int i = 0; i < original_agents_.cols(); i++)  // Iterate through each agent
+    for (unsigned int i = 0; i < original_agents_.cols(); i++)              // Iterate through each agent
     {
-      Eigen::Matrix<T, 6, 1> ag;          // Create a matrix to hold the agent's state
-      Eigen::Matrix<T, 6, 1> ag_initial;  // Create a matrix to hold the agent's initial state
-      ag_initial.col(0) << original_agents_zero_.col(i).template cast<T>();  // Set the initial state of the agent
-      ag.col(0) << original_agents_.col(i).template cast<T>();               // Set the current state of the agent
-      Eigen::Matrix<T, 2, 1> agent_sf =
-          computeSocialForce(ag, ag_initial, robot_agent);  // Compute social force on agent
+      Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
+      ag.col(0) << original_agents_.col(i).template cast<T>();  // Set the current state of the agent
+      Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
       wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
     }
     T total_social_force_magnitude_sq = wr + wp + (T)1e-6;  // Avoid division by zero
-    // const T k_force_magnitude_penalty = T(8.0);  // Tune this: higher for more aggressive penalty on small forces
 
     // sum the social works and multiply by the weight
-    // residual[0] = (T)weight_ * (ceres::exp(-k_force_magnitude_penalty * total_social_force_magnitude_sq));
     residual[0] = (T)weight_ * (total_social_force_magnitude_sq);
 
     return true;
   }
 
   /**
-   * @brief This function computes the social force acting on the robot based on its position, initial position,
+   * @brief This function computes the social force acting on the robot based on its position,
    * and the positions of other agents.
    * It calculates the interaction between the robot and other agents, taking into account their velocities and
    * the social force parameters.
    *
    * @tparam T
    * @param me the current state of the robot, including position, orientation, and velocity
-   * @param me_initial the initial state of the robot, including position, orientation, and velocity
    * @param agents the states of other agents in the environment, including their positions, orientations, and
    * velocities
    * @return Eigen::Matrix<T, 2, 1> the computed social force acting on the robot
    */
   template <typename T>
-  Eigen::Matrix<T, 2, 1> computeSocialForce(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, 1>& me_initial,
+  Eigen::Matrix<T, 2, 1> computeSocialForce(const Eigen::Matrix<T, 6, 1>& me,
                                             const Eigen::Matrix<T, 6, 3>& agents) const
   {
-    Eigen::Matrix<T, 2, 1> meSocialforce((T)0.0, (T)0.0);               // Initialize the social force vector
-    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);                         // Extract the position of the robot
-    Eigen::Matrix<T, 2, 1> meInitialPos(me_initial[0], me_initial[1]);  // Extract the initial position of the robot
+    Eigen::Matrix<T, 2, 1> meSocialforce((T)0.0, (T)0.0);  // Initialize the social force vector
+    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);            // Extract the position of the robot
     Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
-                                 me[4] * ceres::sin(me[2]));                        // Extract the velocity of the robot
-    Eigen::Matrix<T, 2, 1> meInitialVel(me_initial[4] * ceres::cos(me_initial[2]),  // Extract the initial velocity of
-                                                                                    // the robot
-                                        me_initial[4] * ceres::sin(me_initial[2]));
+                                 me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
 
     for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
@@ -212,42 +182,23 @@ public:
       {
         diff = Eigen::Matrix<T, 2, 1>((T)1e-6, (T)0.0);  // Use a fixed small direction
       }
-      Eigen::Matrix<T, 2, 1> initial_diff = meInitialPos - aPos;  // Calculate the initial difference in position
-      if (initial_diff.norm() < (T)1e-6)                          // If the initial position is the same
-      {
-        initial_diff = Eigen::Matrix<T, 2, 1>((T)1e-6, (T)0.0);  // Use a fixed small direction
-      }
       Eigen::Matrix<T, 2, 1> diffDirection = diff.normalized();  // Normalize the difference vector
 
-      Eigen::Matrix<T, 2, 1> initial_diffDirection =
-          initial_diff.normalized();  // Normalize the initial difference vector
       Eigen::Matrix<T, 2, 1> aVel(agents(4, i) * ceres::cos(agents(2, i)),
                                   agents(4, i) * ceres::sin(agents(2, i)));  // Extract the velocity of the agent
       Eigen::Matrix<T, 2, 1> velDiff =
           meVel - aVel;  // Calculate the difference in velocity between the robot and the agent
-      Eigen::Matrix<T, 2, 1> initial_velDiff = meInitialVel - aVel;  // Calculate the initial difference in velocity
       Eigen::Matrix<T, 2, 1> interactionVector =
           (T)sfm_lambda_ * velDiff + diffDirection;  // Calculate the interaction vector
-      Eigen::Matrix<T, 2, 1> initial_interactionVector =
-          (T)sfm_lambda_ * initial_velDiff + initial_diffDirection;  // Calculate the initial interaction vector
 
       T interactionLength = interactionVector.norm();  // Calculate the length of the interaction vector
-      T initial_interactionLength =
-          initial_interactionVector.norm();  // Calculate the initial length of the interaction vector
       Eigen::Matrix<T, 2, 1> interactionDirection =
           interactionVector / interactionLength;  // Normalize the interaction vector
-      Eigen::Matrix<T, 2, 1> initial_interactionDirection =
-          initial_interactionVector / initial_interactionLength;  // Normalize the initial interaction vector
 
       T theta = wrapToPi(ceres::atan2(diffDirection[1], diffDirection[0]) -
                          ceres::atan2(interactionDirection[1],
                                       interactionDirection[0]));  // Calculate the angle between the difference
                                                                   // direction and the interaction direction
-      T theta_initial = wrapToPi(
-          ceres::atan2(initial_diffDirection[1], initial_diffDirection[0]) -
-          ceres::atan2(initial_interactionDirection[1],
-                       initial_interactionDirection[0]));  // Calculate the initial angle between the initial difference
-                                                           // direction and the initial interaction direction
 
       T B = (T)sfm_gamma_ *
             interactionLength;  // Calculate the social force parameter B based on the interaction length and gamma
@@ -256,13 +207,13 @@ public:
           ((T)sfm_nPrime_ * B * theta) * ((T)sfm_nPrime_ * B * theta));  // Calculate the force velocity amount based on
                                                                          // the difference in position and the angle
 
-      T sign_initial = (theta_initial > (T)0) ? (T)1 : (T)-1;  // Determine the sign of theta_initial
-      T sign = (theta > (T)0) ? (T)1 : (T)-1;                  // Determine the sign of theta
+      T sign = (theta > (T)0) ? (T)1 : (T)-1;  // Determine the sign of theta
 
       T forceAngleAmount =
-          -sign_initial * ceres::exp(-(T)diff.norm() / B - ((T)sfm_n_ * B * theta) * ((T)sfm_n_ * B * theta)) +
-          (T)0.0 * sign;  // Calculate the force angle amount based on the difference in position, the angle, and the
-                          // sign of the initial angle
+          -sign * ceres::exp(-(T)diff.norm() / B -
+                             ((T)sfm_n_ * B * theta) *
+                                 ((T)sfm_n_ * B * theta));  // Calculate the force angle amount based on the difference
+                                                            // in position, the angle, and the sign of the initial angle
 
       Eigen::Matrix<T, 2, 1> forceVelocity =
           forceVelocityAmount * interactionDirection;  // Calculate the force velocity vector
@@ -279,9 +230,7 @@ public:
 private:
   double weight_;
   Eigen::Matrix<double, 6, 3> original_agents_;
-  Eigen::Matrix<double, 6, 3> original_agents_zero_;
   geometry_msgs::msg::Pose robot_init_;
-  geometry_msgs::msg::Twist robot_init_vel_;
   double counter_;
   unsigned int current_position_;
   double time_step_;

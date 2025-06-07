@@ -79,13 +79,12 @@ class AgentAngleCost
    * - weight_: The overall scaling weight applied to the computed cost.
    * - robot_init_: The initial pose of the robot.
    * - agents_init_: List of initial statuses (poses, velocities, etc.) of the agents.
-   * - agents_zero_: Baseline statuses of agents used for validating agent activity.
    */
 public:
   using AgentAngleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentAngleCost>;
-  AgentAngleCost(double weight, const AgentsStates& agents_init, const AgentsStates& agents_zero,
-                 const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
-                 unsigned int control_horizon, unsigned int block_length);
+  AgentAngleCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
+                 unsigned int current_position, double time_step, unsigned int control_horizon,
+                 unsigned int block_length);
 
   /**
     * @brief Creates a Ceres cost function for the AgentAngleCost.
@@ -95,7 +94,6 @@ public:
 
     * @param weight The weight for the cost function.
     * @param agents_init A vector of initial agent statuses.
-    * @param agents_zero A vector of baseline agent statuses.
     * @param robot_init The initial pose of the robot.
     * @param current_position The current position in the planning sequence.
     * @param time_step The time step for the MPC.
@@ -105,13 +103,12 @@ public:
     */
 
   inline static AgentAngleCostFunction* Create(double weight, const AgentsStates& agents_init,
-                                               const AgentsStates& agents_zero,
                                                const geometry_msgs::msg::Pose& robot_init,
                                                unsigned int current_position, double time_step,
                                                unsigned int control_horizon, unsigned int block_length)
   {
-    return new AgentAngleCostFunction(new AgentAngleCost(weight, agents_init, agents_zero, robot_init, current_position,
-                                                         time_step, control_horizon, block_length));
+    return new AgentAngleCostFunction(new AgentAngleCost(weight, agents_init, robot_init, current_position, time_step,
+                                                         control_horizon, block_length));
   }
 
   /**
@@ -131,19 +128,19 @@ public:
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
     int closest_index = -1;
-    double closest_distance = std::numeric_limits<double>::infinity();
+    double closest_distance_squared = std::numeric_limits<double>::infinity();
     for (size_t i = 0; i < agents_init_.size(); ++i)
     {
       double dx = agents_init_[i][0] - robot_init_.position.x;
       double dy = agents_init_[i][1] - robot_init_.position.y;
-      double distance = sqrt(dx * dx + dy * dy);
-      if (distance < closest_distance && agents_init_[i][4] > 0.05)
+      double distance_squared = dx * dx + dy * dy;
+      if (distance_squared < closest_distance_squared && agents_init_[i][4] > 0.05)
       {
-        closest_distance = distance;
+        closest_distance_squared = distance_squared;
         closest_index = i;
       }
     }
-    if (closest_index < 0 || closest_distance > safe_distance_ || agents_zero_[closest_index][4] < 0.05)
+    if (closest_index < 0 || closest_distance_squared > safe_distance_squared_)
     {
       residuals[0] = T(0.0);
       return true;
@@ -200,13 +197,12 @@ public:
 private:
   double weight_;
   AgentsStates agents_init_;
-  AgentsStates agents_zero_;
   geometry_msgs::msg::Pose robot_init_;
   unsigned int current_position_;
   double time_step_;
   unsigned int control_horizon_;
   unsigned int block_length_;
-  double safe_distance_;
+  double safe_distance_squared_;
 };
 
 }  // namespace nav2_social_mpc_controller

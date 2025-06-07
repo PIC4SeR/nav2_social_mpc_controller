@@ -17,19 +17,18 @@
 namespace nav2_social_mpc_controller
 {
 
-AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init, const AgentsStates& agents_zero,
+AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
                                const geometry_msgs::msg::Pose& robot_init, unsigned int current_position,
                                double time_step, unsigned int control_horizon, unsigned int block_length)
   : weight_(weight)
   , agents_init_(agents_init)
-  , agents_zero_(agents_zero)
   , robot_init_(robot_init)
   , current_position_(current_position)
   , time_step_(time_step)
   , control_horizon_(control_horizon)
   , block_length_(block_length)
 {
-  safe_distance_ = 2.0;
+  safe_distance_squared_ = 4.0;
 }
 
 }  // namespace nav2_social_mpc_controller

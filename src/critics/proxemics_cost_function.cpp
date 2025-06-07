@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
+#include "nav2_social_mpc_controller/critics/proxemics_cost_function.hpp"
 
 namespace nav2_social_mpc_controller
 {
 
-SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
-                               const geometry_msgs::msg::Pose& robot_init, const double counter,
-                               unsigned int current_position, double time_step, unsigned int control_horizon,
-                               unsigned int block_length)
+ProxemicsCost::ProxemicsCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
+                             const double counter, unsigned int current_position, double time_step,
+                             unsigned int control_horizon, unsigned int block_length)
   : weight_(weight)
   , robot_init_(robot_init)
   , counter_(counter)
@@ -35,12 +34,8 @@ SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
         agents_init[j][4], agents_init[j][5];
   }
 
-  sfm_lambda_ = 2.0;
-  sfm_gamma_ = 0.35;
-  sfm_nPrime_ = 3.0;
-  sfm_n_ = 2.0;
-  sfm_relaxationTime_ = 0.5;
-  sfm_forceFactorSocial_ = 2.1;
+  alpha_ = 3.0;  // Scaling factor for the proxemics cost
+  d0_ = 0.5;     // Minimum distance for proxemics cost
 }
 
 }  // namespace nav2_social_mpc_controller

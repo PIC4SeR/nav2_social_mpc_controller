@@ -71,6 +71,11 @@ Uses the Social Force Model (SFM) to consider social work as a cost, aiming to m
 
 ---
 
+## Proxemics Cost Function
+
+**Purpose:**
+Consideres the distance with neighboring agents as a cost, aiming to maximize it.
+
 ## Velocity Cost Function
 
 **Purpose:**  

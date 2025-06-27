@@ -63,6 +63,7 @@ add_library(mpc_critics SHARED
   src/critics/velocity_cost_function.cpp
   src/critics/velocity_feasibility_cost_function.cpp
   src/critics/proxemics_cost_function.cpp
+  src/critics/overall_social_cost_function.cpp
 )
 
 add_library(${library_name} SHARED

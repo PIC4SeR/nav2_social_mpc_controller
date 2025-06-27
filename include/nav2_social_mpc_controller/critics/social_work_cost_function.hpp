@@ -145,6 +145,9 @@ public:
 
     // sum the social works and multiply by the weight
     residual[0] = (T)weight_ * (total_social_force_magnitude_sq);
+    RCLCPP_DEBUG_STREAM(rclcpp::get_logger("SocialWorkCost"),
+        "Social work cost: " << residual[0] << " (wr: " << wr << ", wp: " << wp
+                             << ", total: " << total_social_force_magnitude_sq << ")");
 
     return true;
   }
@@ -202,7 +205,7 @@ public:
 
       T B = (T)sfm_gamma_ *
             interactionLength;  // Calculate the social force parameter B based on the interaction length and gamma
-      T forceVelocityAmount = -(T)ceres::exp(
+      T forceVelocityAmount = (T)ceres::exp(
           -(T)diff.norm() / B -
           ((T)sfm_nPrime_ * B * theta) * ((T)sfm_nPrime_ * B * theta));  // Calculate the force velocity amount based on
                                                                          // the difference in position and the angle
@@ -210,7 +213,7 @@ public:
       T sign = (theta > (T)0) ? (T)1 : (T)-1;  // Determine the sign of theta
 
       T forceAngleAmount =
-          -sign * ceres::exp(-(T)diff.norm() / B -
+          sign * ceres::exp(-(T)diff.norm() / B -
                              ((T)sfm_n_ * B * theta) *
                                  ((T)sfm_n_ * B * theta));  // Calculate the force angle amount based on the difference
                                                             // in position, the angle, and the sign of the initial angle

@@ -19,6 +19,7 @@
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
+//#include "nav2_social_mpc_controller/update_state.hpp"
 #include "nav2_social_mpc_controller/update_state.hpp"
 #include "nav2_social_mpc_controller/tools/type_definitions.hpp"
 
@@ -52,7 +53,6 @@
  */
 namespace nav2_social_mpc_controller
 {
-
 class GoalAlignCost
 {
   /**
@@ -63,9 +63,11 @@ class GoalAlignCost
    * with a goal heading. It uses automatic differentiation to compute the residuals for optimization.
    */
 public:
+
   using GoalAlignCostFuction = ceres::DynamicAutoDiffCostFunction<GoalAlignCost>;
-  GoalAlignCost(double weight, const Eigen::Matrix<double, 2, 1> goal_heading,
-                const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
+  GoalAlignCost(double weight, const Eigen::Matrix<double, 2, 1> goal_heading, 
+                const geometry_msgs::msg::Pose robot_init,
+                unsigned int current_position, double time_step,
                 unsigned int control_horizon, unsigned int block_length);
 
   /**
@@ -76,13 +78,13 @@ public:
    * @return A pointer to the created AutoDiffCostFunction instance.
    */
   inline static GoalAlignCostFuction* Create(double weight, const Eigen::Matrix<double, 2, 1> goal_heading,
-                                             const geometry_msgs::msg::Pose& robot_init, unsigned int current_position,
+                                             const geometry_msgs::msg::Pose robot_init, unsigned int current_position,
                                              double time_step, unsigned int control_horizon, unsigned int block_length)
   {
     // The first number is the number of cost functions.
     // The following number are the length of the parameters passed in the
     // addResidualBlock function.
-    return new GoalAlignCost::GoalAlignCostFuction(new GoalAlignCost(weight, goal_heading, robot_init, current_position,
+    return new GoalAlignCost::GoalAlignCostFuction(new GoalAlignCost(weight, goal_heading, robot_init , current_position,
                                                                      time_step, control_horizon, block_length));
   }
 
@@ -100,6 +102,7 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residuals) const
   {
+    
     // calling the function to propagate forward the state, adding the subsequent velocity commands
     // to the robot state
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
@@ -113,14 +116,37 @@ public:
     residuals[0] = (T)weight_ * turning_angle * turning_angle;
 
     return true;
+    
+    // Ensure state_cache is populated up to time_step_
+    //for (unsigned int j = state_cache_.size(); j <= current_position_; ++j) {
+    //  unsigned int block_index;
+    //  if (current_position_ >= control_horizon_) {
+    //    block_index = (control_horizon_ - 1)/block_length_;  // Use the last block for remaining steps
+    //  }
+    //  else {
+    //    block_index = j / block_length_;  // Determine the block index based on the current position
+    //  }
+    //  state_cache_.appendState(parameters[block_index], time_step_);
+    //}
+
+    /*auto [x, y, theta] = robot_pose_;
+
+    T turning_angle = ceres::atan2(
+        ceres::sin(T(goal_heading_[1]) - theta),
+        ceres::cos(T(goal_heading_[1]) - theta));
+
+    residuals[0] = T(weight_) * turning_angle * turning_angle;
+    return true;*/
   }
 
 private:
   // parameters list
   double weight_;
+  //StateCache<T>& state_cache_;
   Eigen::Matrix<double, 2, 1> goal_heading_;
+  //forward_state robot_pose_;
   geometry_msgs::msg::Pose robot_init_;
-  AgentsStates agents_init_;
+  //AgentsStates agents_init_;
   unsigned int current_position_;
   double time_step_;
   unsigned int control_horizon_;

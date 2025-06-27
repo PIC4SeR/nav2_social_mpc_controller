@@ -43,15 +43,18 @@
 #include "nav2_social_mpc_controller/critics/goal_align_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/obstacle_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
+#include "nav2_social_mpc_controller/critics/overall_social_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/velocity_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/velocity_feasibility_cost_function.hpp"
 #include "nav2_social_mpc_controller/critics/proxemics_cost_function.hpp"
+#include "nav2_social_mpc_controller/update_state.hpp"
 
 #include "nav2_social_mpc_controller/sfm.hpp"
 #include "nav2_social_mpc_controller/trajectory_memory.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
 #include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "nav2_social_mpc_controller/state_cache.hpp"
 
 namespace nav2_social_mpc_controller
 {
@@ -124,6 +127,36 @@ public:
     double params[2];
   };
 
+  struct agent_velocity
+  {
+    double params[2];  
+  };
+
+  struct optimizing_velocities
+  {
+    double params[4];
+  };
+  struct dynamic_optimizing_velocities
+  {
+      std::vector<double> params;
+
+      // Optional: Constructor to initialize with a specific number of parameters
+      dynamic_optimizing_velocities(size_t num_params = 0) : params(num_params) {}
+
+      // Helper to add parameters (e.g., for each detected agent)
+      void add_agent_params() {
+          params.push_back(0.0); // Angular velocity
+          params.push_back(0.0); // Linear velocity
+      }
+
+      // Helper to resize based on the number of agents
+      void set_num_agents(int num_agents) {
+          // Base 2 parameters for the robot itself
+          // + 2 parameters for each agent
+          params.resize(2 + (num_agents * 2));
+          // You might want to initialize these new elements to a default value if not already done
+      }
+  };
   // t, yaw
   struct heading
   {
@@ -208,13 +241,16 @@ private:
   AgentsTrajectories project_people(const AgentsStates& init_people, const AgentTrajectory& robot_path,
                                     const obstacle_distance_msgs::msg::ObstacleDistance& od, const float& maxtime,
                                     const float& timestep);
-
   /**
-   * @brief Compute obstacle position relative to agent
-   * @param apos Agent position
+   * @brief Project people positions for one step
+   * @param target_people Target people positions
+   * @param robot Robot status
    * @param od Obstacle distances
-   * @return Vector to obstacle
+   * @param maxtime Maximum time horizon
+   * @param timestep Time step
+   * @return Vector of agent statuses
    */
+
   Eigen::Vector2d computeObstacle(const Eigen::Vector2d& apos, const obstacle_distance_msgs::msg::ObstacleDistance& od);
 
   bool debug_;

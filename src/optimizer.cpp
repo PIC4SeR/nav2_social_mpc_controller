@@ -191,6 +191,81 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   // use the parametrized format to project the people in the field of view of the robot, using the obstacles and the
   // initial status of the people
   people_proj = project_people(init_people, optim_status, obstacles, max_time, time_step);
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "People projected size: %ld", people_proj.size());
+  
+  std::vector<agent_velocity> agent_uno_velocities;
+  long unsigned int closest_agent_idx = 0;
+  double min_dist = std::numeric_limits<double>::max();
+  if (!people_proj.empty() && !people_proj[0].empty()) {
+    double robot_x = optim_status[0][0];
+    double robot_y = optim_status[0][1];
+    for (size_t i = 0; i < people_proj[0].size(); ++i) {
+      double dx = people_proj[0][i][0] - robot_x;
+      double dy = people_proj[0][i][1] - robot_y;
+      double dist = std::hypot(dx, dy);
+      if (dist < min_dist) {
+        min_dist = dist;
+        closest_agent_idx = static_cast<long unsigned int>(i);
+      }
+    }
+  }
+  long unsigned int num_agents = people.people.size();
+
+  std::vector<dynamic_optimizing_velocities> variables_to_optimize;
+  for (unsigned int j= 0; j < optim_status.size(); ++j)
+  {
+    dynamic_optimizing_velocities doa;
+    doa.set_num_agents(num_agents);
+    doa.params[0] = optim_status[j][4];
+    doa.params[1] = optim_status[j][5];
+     // fill the 2 coordinates for each of the num_agents
+    for (unsigned int k = 0; k < num_agents; ++k) {
+      doa.params[2 + 2*k]     = people_proj[j][k][4];  // first coord of agent k
+      doa.params[2 + 2*k + 1] = people_proj[j][k][5];  // second coord of agent k
+    }
+    RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Dynamic optimizing velocities size: %ld",
+             doa.params.size());
+    variables_to_optimize.push_back(doa);
+  }
+  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Variables to optimize size: %ld", variables_to_optimize.size());
+
+
+  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Number of agents: %ld", num_agents);
+
+  // Extract the closest agent's state at each time step
+  AgentsStates tentativo;
+  for (const auto& timestep : people_proj) {
+    if (timestep.size() > closest_agent_idx) {
+      tentativo.push_back(timestep[closest_agent_idx]);
+    }
+  }
+  // Extract the first agent's state at each time step
+
+  //AgentsStates tentativo;
+  //for (const auto& timestep : people_proj) {
+  //  if (!timestep.empty()) {
+  //    tentativo.push_back(timestep[0]);
+  //  }
+  //}
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Tentativo size: %ld", tentativo.size());
+  if (!tentativo.empty()){
+    for (auto x : tentativo){
+      agent_velocity av;
+      av.params[0] = x[4];  // lv
+      av.params[1] = x[5];  // av
+      agent_uno_velocities.push_back(av);
+    }
+  } else {
+    for (auto x : optim_status)
+    {
+      agent_velocity av;
+      av.params[0] = x[0]*0.0;  // lv
+      av.params[1] = x[0]*0.0;  // av
+      agent_uno_velocities.push_back(av);
+    }
+  }
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Agent uno velocities size: %ld",
+  //         agent_uno_velocities.size());
 
   // get different parameters from the initial status
   // and create the evolving poses, positions, headings and velocities
@@ -231,6 +306,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     optim_angular_velocities.push_back(av);
     evolving_poses.push_back(pose);
   }
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Evolving velocities size: %ld", optim_velocities.size());
   Eigen::Matrix<double, 2, 1> final_trajectorized_point(optim_positions[optim_status.size() - 1].params[0],
                                                         optim_positions[optim_status.size() - 1].params[1]);
 
@@ -243,68 +319,119 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   // set the value of control horizon, if size of velociteies is smaller than control horizon, set it to the size of
   // velocities also set the block length, if it is larger than the control horizon, set it to the control horizon
-  double counter = 0.0;
+  //double counter = 0.0;
   std::vector<double*> parameter_blocks;
   unsigned int control_horizon = std::min(control_horizon_, static_cast<unsigned int>(optim_velocities.size()));
   unsigned int block_length = std::min(parameter_block_length_, control_horizon);
+  //Eigen::Matrix<T,6,Dynamic> evolving_agents_states;
+  //for (auto p:init_people)
+  //{
+  //  Eigen::Matrix<T,6,1> agent_state;
+  //  agent_state << (T)p[0], (T)p[1], (T)p[2], 0.0, (T)p[3], (T)p[4];  // x, y, yaw, t, lv, av
+  //  evolving_agents_states.conservativeResize(6, evolving_agents_states.cols() + 1);
+  //  evolving_agents_states.col(evolving_agents_states.cols() - 1) = agent_state;
+  //}
   // start of optimization problem construction
+  std::vector<optimizing_velocities> overall_social_cost_velocities;
+  for (size_t i = 0; i < agent_uno_velocities.size(); ++i)
+  {
+      optimizing_velocities ov;
+      
+      ov.params[0] = optim_velocities[i].params[0];  // robot lv
+      ov.params[1] = optim_velocities[i].params[1];  // robot av
+      ov.params[2] = agent_uno_velocities[i].params[0];  // first agent lv
+      ov.params[3] = agent_uno_velocities[i].params[1];  // first agent av
+  
+      overall_social_cost_velocities.push_back(ov);
+  }
+  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Overall social cost velocities size: %ld",
+           overall_social_cost_velocities.size());
   for (unsigned int i = 0; i < optim_velocities.size(); i++)  // i is the index of the current time step
   {
-    counter = counter + 1.0;
+    
+    //counter = counter + 1.0;
     unsigned int block_used = i / block_length;
 
     // add the velocities to optimize
     if (i < control_horizon &&
-        (parameter_blocks.empty() || parameter_blocks.back() != optim_velocities[block_used].params))
+        (parameter_blocks.empty() || parameter_blocks.back() != variables_to_optimize[block_used].params.data()))
     {
-      parameter_blocks.push_back(optim_velocities[block_used].params);
+      parameter_blocks.push_back(variables_to_optimize[block_used].params.data());
     }
-    double counter_step = counter * time_step;
-    if (people.people.size() != 0)
+    RCLCPP_INFO(
+      rclcpp::get_logger("Optimizer"),
+      "Total parameter blocks size: %ld, each block params size: %ld, total params: %ld",
+      parameter_blocks.size(),
+      variables_to_optimize[block_used].params.size(),
+      static_cast<long>(parameter_blocks.size() * variables_to_optimize[block_used].params.size()));
+
+    //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Optimizing velocities for time step %d, block %d, size %ld", i, block_used, parameter_blocks.size());
+    //double counter_step = counter * time_step;
+    /// EXPERIMENTAL , compute the new_position and new_orientation only once, then use them in the cost functions
+    //auto [new_position_x, new_position_y, new_orientation] = computeUpdatedStateRedux(
+    //    evolving_poses[0].pose, optim_velocities.data()->params, time_step, i, control_horizon, block_length);
+    //Eigen::Matrix<T,6,1> robot_to_optimize;
+    //robot_to_optimize << new_position_x, new_position_y, new_orientation, 0.0,
+    //  parameter_blocks.back()[0], parameter_blocks.back()[1];  // x, y, yaw, t, lv, av
+    //new_states = project_people_1_step(evolving_agents_states, robot_to_optimize, obstacles, max_time, time_step);
+    //evolving_agents_states = new_states;
+    bool found_people = true;
+    if (people.people.size() == 0){
+      found_people = false;
+    }
+    Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
+    auto* overall_social_cost_function_f =
+        SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_proj[0],closest_agent_idx, evolving_poses[0].pose,
+                                           i, time_step, control_horizon, block_length,found_people, true, true, true, true, true);
+    //auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
+    //                                                      counter_step, i, time_step, control_horizon, block_length);
+    //auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
+    //                                                      i, time_step, control_horizon, block_length);
+    //auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[i + 1], evolving_poses[0].pose,
+    //                                                   counter_step, i, time_step, control_horizon, block_length);
+    //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Adding cost functions for time step %d, block %d", i, block_used);
+    unsigned int b = 2 + 2*(unsigned int)num_agents;
+    if (i < control_horizon)
     {
-      auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
-                                                            counter_step, i, time_step, control_horizon, block_length);
-      auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
-                                                            i, time_step, control_horizon, block_length);
-      auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[i + 1], evolving_poses[0].pose,
-                                                         counter_step, i, time_step, control_horizon, block_length);
-      if (i < control_horizon)
+      for (unsigned int j = 0; j <= i / block_length; j++)
       {
-        for (unsigned int j = 0; j <= i / block_length; j++)
-        {
-          agent_angle_function_f->AddParameterBlock(2);
-          social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
-        }
+        overall_social_cost_function_f->AddParameterBlock(b);  // Each velocity block has 2 params (v, ω)
+        //agent_angle_function_f->AddParameterBlock(2);
+        //social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+        //proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
       }
-      else
-      {
-        for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
-        {
-          agent_angle_function_f->AddParameterBlock(2);
-          social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
-        }
-      }
-      agent_angle_function_f->SetNumResiduals(1);
-      social_work_function_f->SetNumResiduals(1);
-      proxemics_function_f->SetNumResiduals(1);
-      problem.AddResidualBlock(agent_angle_function_f, NULL, parameter_blocks);
-      problem.AddResidualBlock(social_work_function_f, NULL, parameter_blocks);
-      problem.AddResidualBlock(proxemics_function_f, NULL, parameter_blocks);
     }
+    else
+    {
+      for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
+      {
+        overall_social_cost_function_f->AddParameterBlock(b);  // Each velocity block has 2 params (v, ω)
+        //agent_angle_function_f->AddParameterBlock(2);
+        //social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+        //proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
+      }
+    }
+    unsigned int a = 5;
+    //agent_angle_function_f->SetNumResiduals(1);
+    //social_work_function_f->SetNumResiduals(1);
+    //proxemics_function_f->SetNumResiduals(1);
+    overall_social_cost_function_f->SetNumResiduals(a);
+    problem.AddResidualBlock(overall_social_cost_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(agent_angle_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(social_work_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(proxemics_function_f, NULL, parameter_blocks);
     auto* velocity_function_f =
         VelocityCost::Create(velocity_w_, desired_linear_vel_, i, control_horizon, block_length);
-    Eigen::Matrix<double, 2, 1> final_heading(optim_headings.back().params[0], optim_headings.back().params[1]);
-    auto* goal_align_cost_function_f = GoalAlignCost::Create(goal_align_w_, final_heading, evolving_poses[0].pose, i,
-                                                             time_step, control_horizon, block_length);
+    //Eigen::Matrix<double, 2, 1> final_heading(optim_headings.back().params[0], optim_headings.back().params[1]);
+    //auto* goal_align_cost_function_f = GoalAlignCost::Create(goal_align_w_, final_heading, evolving_poses[0].pose, i,
+    //                                                         time_step, control_horizon, block_length);
     if (i < control_horizon)
     {
       for (unsigned int j = 0; j <= i / block_length; j++)
       {
         // Each velocity block has 2 params (v, ω)
-        velocity_function_f->AddParameterBlock(2);
-        goal_align_cost_function_f->AddParameterBlock(2);
+        velocity_function_f->AddParameterBlock(b);
+        //goal_align_cost_function_f->AddParameterBlock(2);
       }
     }
     else
@@ -312,26 +439,26 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
       {
         // Each velocity block has 2 params (v, ω)
-        velocity_function_f->AddParameterBlock(2);
-        goal_align_cost_function_f->AddParameterBlock(2);
+        velocity_function_f->AddParameterBlock(b);
+        //goal_align_cost_function_f->AddParameterBlock(2);
       }
     }
 
     velocity_function_f->SetNumResiduals(1);
-    goal_align_cost_function_f->SetNumResiduals(1);
+    //goal_align_cost_function_f->SetNumResiduals(1);
 
     problem.AddResidualBlock(velocity_function_f, NULL, parameter_blocks);
-    problem.AddResidualBlock(goal_align_cost_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(goal_align_cost_function_f, NULL, parameter_blocks);
 
     // add the positions to optimize
-    Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
+    
 
     // add the cost functions for the path following and alignment
-    auto* path_follow_cost_function_f = DistanceCost::Create(
-        distance_w_, final_trajectorized_point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+    //auto* path_follow_cost_function_f = DistanceCost::Create(
+    //    distance_w_, final_trajectorized_point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
     // add the angle cost function, which is used to align the robot with the path
-    auto* path_align_cost_function_f =
-        DistanceCost::Create(angle_w_, point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+    //auto* path_align_cost_function_f =
+    //    DistanceCost::Create(angle_w_, point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
 
     // add the obstacle cost function, which is used to avoid obstacles
     // the obstacle cost function is used to avoid obstacles, it takes the costmap and the interpolator as parameters
@@ -341,25 +468,25 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     {
       for (unsigned int j = 0; j <= i / block_length; j++)
       {
-        path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-        path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
-        obs_cost_function_f->AddParameterBlock(2);
+        //path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+        //path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
+        obs_cost_function_f->AddParameterBlock(b);
       }
     }
     else
     {
       for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
       {
-        path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-        path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
-        obs_cost_function_f->AddParameterBlock(2);
+        //path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
+        //path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
+        obs_cost_function_f->AddParameterBlock(b);
       }
     }
-    path_follow_cost_function_f->SetNumResiduals(1);
-    path_align_cost_function_f->SetNumResiduals(1);
+    //path_follow_cost_function_f->SetNumResiduals(1);
+    //path_align_cost_function_f->SetNumResiduals(1);
     obs_cost_function_f->SetNumResiduals(1);
-    problem.AddResidualBlock(path_follow_cost_function_f, NULL, parameter_blocks);
-    problem.AddResidualBlock(path_align_cost_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(path_follow_cost_function_f, NULL, parameter_blocks);
+    //problem.AddResidualBlock(path_align_cost_function_f, NULL, parameter_blocks);
     problem.AddResidualBlock(obs_cost_function_f, NULL, parameter_blocks);
     if (i != 0 && i < control_horizon / block_length)
     {
@@ -372,10 +499,12 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   for (unsigned int i = 0; i < control_horizon / block_length; i++)
   {
-    problem.SetParameterLowerBound(optim_velocities[i].params, 0, 0.0);   // lower bound for linear velocity
-    problem.SetParameterUpperBound(optim_velocities[i].params, 0, 0.6);   // upper bound for linear velocity
-    problem.SetParameterLowerBound(optim_velocities[i].params, 1, -1.4);  // lower bound for angular velocity
-    problem.SetParameterUpperBound(optim_velocities[i].params, 1, 1.4);   // upper bound for angular velocity
+    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 0, 0.0);   // lower bound for linear velocity
+    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 0, 0.6);   // upper bound for linear velocity
+    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 1, -1.4);  // lower bound for angular velocity
+    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 1, 1.4);   // upper bound for angular velocity
+    //problem.SetParameterLowerBound(variables_to_optimize[i].params, 2, 0.0);   // lower bound for first agent linear velocity
+    //problem.SetParameterUpperBound(variables_to_optimize[i].params, 2, 0.6);   // upper bound for first agent linear velocity
   }
 
   ceres::Solve(options_, &problem, &summary);
@@ -389,24 +518,24 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   for (unsigned int i = control_horizon / block_length; i < optim_velocities.size(); i++)
   {
-    optim_velocities[i].params[0] = optim_velocities[(control_horizon - 1) / block_length].params[0];
-    optim_velocities[i].params[1] = optim_velocities[(control_horizon - 1) / block_length].params[1];
+    variables_to_optimize[i].params[0] = variables_to_optimize[(control_horizon - 1) / block_length].params[0];
+    variables_to_optimize[i].params[1] = variables_to_optimize[(control_horizon - 1) / block_length].params[1];
   }
   std::vector<vel> saving_velocities;
   for (unsigned int i = 0; i < control_horizon; i++)
   {
     vel v;
     unsigned int block_idx = i / (block_length);
-    v.params[0] = optim_velocities[block_idx].params[0];
-    v.params[1] = optim_velocities[block_idx].params[1];
+    v.params[0] = variables_to_optimize[block_idx].params[0];
+    v.params[1] = variables_to_optimize[block_idx].params[1];
     saving_velocities.push_back(v);
   }
-  for (unsigned int i = control_horizon; i < (optim_velocities.size() + 1); i++)
+  for (unsigned int i = control_horizon; i < (variables_to_optimize.size() + 1); i++)
   {
     vel v;
     unsigned int block_idx = (i - 1);
-    v.params[0] = optim_velocities[block_idx].params[0];
-    v.params[1] = optim_velocities[block_idx].params[1];
+    v.params[0] = variables_to_optimize[block_idx].params[0];
+    v.params[1] = variables_to_optimize[block_idx].params[1];
     saving_velocities.push_back(v);
   }
   cmds.resize(saving_velocities.size());
@@ -605,6 +734,7 @@ AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people, co
     a.obstacles1.push_back(computeObstacle(a.position, od));
     agents.push_back(a);
   }
+
 
   // compute for each robot state of the path
   for (unsigned int i = 0; i < robot_path.size() - 1; i++)

@@ -22,6 +22,7 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
 #include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "nav2_social_mpc_controller/sfm.hpp"
 
 /**
  * @file agent_angle_cost_function.hpp
@@ -127,6 +128,8 @@ public:
   {
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
+
+    
     int closest_index = -1;
     double closest_distance_squared = std::numeric_limits<double>::infinity();
     for (size_t i = 0; i < agents_init_.size(); ++i)

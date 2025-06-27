@@ -249,9 +249,9 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = cmds[0].header;
-  cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
+  cmd_vel.twist.linear.x = (std::abs(cmds[0].twist.linear.x) < 0.6) ? cmds[0].twist.linear.x : 0.6;
   cmd_vel.twist.linear.y = 0;
-  cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
+  cmd_vel.twist.angular.z = (std::abs(cmds[0].twist.angular.z) < 1.5) ? cmds[0].twist.angular.z : 1.5;
   RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
   return cmd_vel;
 }

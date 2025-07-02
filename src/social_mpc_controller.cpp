@@ -180,11 +180,27 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
   {
     geometry_msgs::msg::TwistStamped cmd_vel;
+    // Fallback: align with the goal and move forward if possible
     cmd_vel.header = robot_pose.header;
-    cmd_vel.twist.linear.x = 0.1;  // Use the desired speed as a fallback
-    cmd_vel.twist.linear.y = 0.0;
-    cmd_vel.twist.angular.z = 0.0;  // No angular velocity
-    RCLCPP_WARN(logger_, "Approaching goal without a valid trajectory, using fallback cmd_vel");
+
+    // Compute angle to goal
+    double dx = goal.point.x - robot_pose.pose.position.x;
+    double dy = goal.point.y - robot_pose.pose.position.y;
+    double angle_to_goal = std::atan2(dy, dx);
+    double robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
+    double angle_diff = angles::shortest_angular_distance(robot_yaw, angle_to_goal);
+
+    // If not aligned, rotate in place
+    if (std::fabs(angle_diff) > 0.1) {
+      cmd_vel.twist.linear.x = 0.0;
+      cmd_vel.twist.angular.z = clamp(angle_diff/0.05, -0.8, 0.8);
+      RCLCPP_WARN(logger_, "Fallback: rotating to align with goal (angle diff: %f)", angle_diff);
+    } else {
+      // Aligned: move forward slowly
+      cmd_vel.twist.linear.x = 0.2;
+      cmd_vel.twist.angular.z = 0.0;
+      RCLCPP_WARN(logger_, "Fallback: moving towards goal");
+    }
     return cmd_vel;
   }
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;

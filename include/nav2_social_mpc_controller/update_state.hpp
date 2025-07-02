@@ -99,12 +99,12 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
       for (unsigned k = 0; k < num_agents; ++k) { 
       // param index for agent k:
       unsigned idx = 2 + 2*k;
-      T speed   = parameters[block_index][idx];
-      T omega   = parameters[block_index][idx + 1];
+      T vx = parameters[block_index][idx];
+      T vy = parameters[block_index][idx + 1];
 
-      agent_x[k]     += speed * ceres::cos(agent_theta[k]) * dt;
-      agent_y[k]     += speed * ceres::sin(agent_theta[k]) * dt;
-      agent_theta[k] += omega * dt;
+      agent_x[k] += vx * dt;
+      agent_y[k] += vy * dt;
+      agent_theta[k] = ceres::atan2(vy, vx);
       }
     }
       //  agent_x_1 += parameters[block_index][2] * ceres::cos(agent_theta_1) * dt;

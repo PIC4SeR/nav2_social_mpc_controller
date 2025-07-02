@@ -84,11 +84,14 @@ public:
   bool operator()(T const* const* parameters, T* residual) const
   {
     // Compute robot social work
-    Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
+    Eigen::Matrix<T, 6, 3> agents_ = original_agents_.template cast<T>();  // Convert original agents to type T
     Eigen::Matrix<T, 6, 1> robot;
 
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-        robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    //auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
+    //    robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    auto [new_position_x, new_position_y, new_position_orientation, agents] =
+        computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,
+                        block_length_);  // Update robot state
     robot(0, 0) = (T)new_position_x;                                                               // x
     robot(1, 0) = (T)new_position_y;                                                               // y
     robot(2, 0) = (T)new_position_orientation;                                                     // yaw

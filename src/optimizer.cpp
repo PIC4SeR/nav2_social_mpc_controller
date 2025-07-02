@@ -147,7 +147,7 @@ void Optimizer::initialize(const OptimizerParams params)
  */
 bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj,
                          const nav2_costmap_2d::Costmap2D* costmap,
-                         const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
+                         //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                          std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                          const geometry_msgs::msg::Twist& speed, const float time_step)
 {
@@ -190,7 +190,9 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                                  current_cmds_w, max_time, time_step);
   // use the parametrized format to project the people in the field of view of the robot, using the obstacles and the
   // initial status of the people
-  people_proj = project_people(init_people, optim_status, obstacles, max_time, time_step);
+  people_proj = project_people(init_people
+                             // , optim_status, obstacles, max_time, time_step
+                            );
 
   // get different parameters from the initial status
   // and create the evolving poses, positions, headings and velocities
@@ -262,11 +264,11 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     double counter_step = counter * time_step;
     if (people.people.size() != 0)
     {
-      auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
+      auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[0], evolving_poses[0].pose,
                                                             counter_step, i, time_step, control_horizon, block_length);
-      auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
+      auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[0], evolving_poses[0].pose,
                                                             i, time_step, control_horizon, block_length);
-      auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[i + 1], evolving_poses[0].pose,
+      auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[0], evolving_poses[0].pose,
                                                          counter_step, i, time_step, control_horizon, block_length);
       if (i < control_horizon)
       {
@@ -551,122 +553,124 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
 }
 
 // we project the people state for each time step of the robot path
-AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people, const AgentTrajectory& robot_path,
-                                             const obstacle_distance_msgs::msg::ObstacleDistance& od,
-                                             const float& maxtime, const float& timestep)
+AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people
+                                             //const AgentTrajectory& robot_path,
+                                             //const obstacle_distance_msgs::msg::ObstacleDistance& od,
+                                             //const float& maxtime, const float& timestep
+                                             )
 {
-  float naive_goal_time = maxtime;  // secs
+  //float naive_goal_time = maxtime;  // secs
   // double people_desired_vel = 1.0;
   AgentsTrajectories people_traj;
   people_traj.push_back(init_people);
 
-  // I NEED TO ADD THE CLOSER OBSTACLE POSITION TO EACH AGENT
-  // FOR EACH STEP. THAT OBSTACLE POSITION MUST BE IN THE
-  // SAME COORDINATE FRAME THAT THE AGENT POSITION.
-
-  std::vector<sfm_controller::Agent> agents;
-
-  // transform people to sfm agents
-  for (unsigned int i = 0; i < init_people.size(); i++)
-  {
-    // if person not valid, skip it
-    if (init_people[i][3] == -1)
-      continue;
-
-    sfm_controller::Agent a;
-    a.id = i + 1;
-    a.position << init_people[i][0], init_people[i][1];
-    a.yaw = init_people[i][2];
-    a.linearVelocity = init_people[i][4];
-    a.angularVelocity = init_people[i][5];
-
-    a.velocity << a.linearVelocity * cos(a.yaw), a.linearVelocity * sin(a.yaw);
-    a.desiredVelocity = 0.5;  // people_desired_vel; // could be
-                              // computed somehow???
-    a.radius = 0.5;
-    // compute goal with the Constant Velocity Model
-    sfm_controller::Goal g;
-    g.radius = 0.25;
-    Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
-    g.center = gpos;
-    a.goals.push_back(g);
-    // Fill the obstacles
-
-    // check if the obstacle distance message is valid
-    // if the map has 100x100 cells
-    // TODO use the costmap to compute the obstacles
-    if (od.info.width == 100 && od.info.height == 100)
-    {
-      RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
-                         "ObstacleDistance grid is NOT  valid with size: " << od.info.width << "x" << od.info.height);
-      continue;
-    }
-
-    a.obstacles1.push_back(computeObstacle(a.position, od));
-    agents.push_back(a);
-  }
-
-  // compute for each robot state of the path
-  for (unsigned int i = 0; i < robot_path.size() - 1; i++)
-  {
-    // robot as sfm agent
-    sfm_controller::Agent sfmrobot;
-    sfmrobot.desiredVelocity = 0.6;
-    sfmrobot.radius = 0.5;
-    sfmrobot.id = 0;
-    sfmrobot.position << robot_path[i][0], robot_path[i][1];
-    sfmrobot.yaw = robot_path[i][2];
-    sfmrobot.linearVelocity = robot_path[i][4];
-    sfmrobot.angularVelocity = robot_path[i][5];
-    // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
-    sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw), sfmrobot.linearVelocity * sin(sfmrobot.yaw);
-    sfm_controller::Goal g;
-    g.radius = 0.25;
-    Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
-    g.center = gpos;
-    sfmrobot.goals.push_back(g);
-
-    // add the robot to the agents
-    agents.push_back(sfmrobot);
-
-    // Compute Social Forces
-    sfm_controller::SFM.computeForces(agents);
-    // Project the people movement according to the SFM
-    sfm_controller::SFM.updatePosition(agents, timestep);
-
-    // remove the robot (last agent)
-    agents.pop_back();
-
-    // update agents obstacles
-    for (unsigned int j = 0; j < agents.size(); j++)
-    {
-      agents[j].obstacles1.clear();
-      agents[j].obstacles1.push_back(computeObstacle(agents[j].position, od));
-    }
-
-    // Take the people agents
-    AgentsStates humans;
-    for (auto p : agents)
-    {
-      AgentStatus as;
-      as(0, 0) = p.position[0];
-      as(1, 0) = p.position[1];
-      as(2, 0) = p.yaw;
-      as(3, 0) = (i + 1) * timestep;
-      as(4, 0) = p.linearVelocity;
-      as(5, 0) = p.angularVelocity;
-      humans.push_back(as);
-    }
-    // fill with empty agents if needed
-    while (humans.size() < init_people.size())
-    {
-      AgentStatus ag;
-      ag.setZero();
-      ag(3, 0) = -1.0;
-      humans.push_back(ag);
-    }
-    people_traj.push_back(humans);
-  }
+  //// I NEED TO ADD THE CLOSER OBSTACLE POSITION TO EACH AGENT
+  //// FOR EACH STEP. THAT OBSTACLE POSITION MUST BE IN THE
+  //// SAME COORDINATE FRAME THAT THE AGENT POSITION.
+//
+  //std::vector<sfm_controller::Agent> agents;
+//
+  //// transform people to sfm agents
+  //for (unsigned int i = 0; i < init_people.size(); i++)
+  //{
+  //  // if person not valid, skip it
+  //  if (init_people[i][3] == -1)
+  //    continue;
+//
+  //  sfm_controller::Agent a;
+  //  a.id = i + 1;
+  //  a.position << init_people[i][0], init_people[i][1];
+  //  a.yaw = init_people[i][2];
+  //  a.linearVelocity = init_people[i][4];
+  //  a.angularVelocity = init_people[i][5];
+//
+  //  a.velocity << a.linearVelocity * cos(a.yaw), a.linearVelocity * sin(a.yaw);
+  //  a.desiredVelocity = 0.5;  // people_desired_vel; // could be
+  //                            // computed somehow???
+  //  a.radius = 0.5;
+  //  // compute goal with the Constant Velocity Model
+  //  sfm_controller::Goal g;
+  //  g.radius = 0.25;
+  //  Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
+  //  g.center = gpos;
+  //  a.goals.push_back(g);
+  //  // Fill the obstacles
+//
+  //  // check if the obstacle distance message is valid
+  //  // if the map has 100x100 cells
+  //  // TODO use the costmap to compute the obstacles
+  //  if (od.info.width == 100 && od.info.height == 100)
+  //  {
+  //    RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
+  //                       "ObstacleDistance grid is NOT  valid with size: " << od.info.width << "x" << od.info.height);
+  //    continue;
+  //  }
+//
+  //  a.obstacles1.push_back(computeObstacle(a.position, od));
+  //  agents.push_back(a);
+  //}
+//
+  //// compute for each robot state of the path
+  //for (unsigned int i = 0; i < robot_path.size() - 1; i++)
+  //{
+  //  // robot as sfm agent
+  //  sfm_controller::Agent sfmrobot;
+  //  sfmrobot.desiredVelocity = 0.6;
+  //  sfmrobot.radius = 0.5;
+  //  sfmrobot.id = 0;
+  //  sfmrobot.position << robot_path[i][0], robot_path[i][1];
+  //  sfmrobot.yaw = robot_path[i][2];
+  //  sfmrobot.linearVelocity = robot_path[i][4];
+  //  sfmrobot.angularVelocity = robot_path[i][5];
+  //  // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
+  //  sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw), sfmrobot.linearVelocity * sin(sfmrobot.yaw);
+  //  sfm_controller::Goal g;
+  //  g.radius = 0.25;
+  //  Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
+  //  g.center = gpos;
+  //  sfmrobot.goals.push_back(g);
+//
+  //  // add the robot to the agents
+  //  agents.push_back(sfmrobot);
+//
+  //  // Compute Social Forces
+  //  sfm_controller::SFM.computeForces(agents);
+  //  // Project the people movement according to the SFM
+  //  sfm_controller::SFM.updatePosition(agents, timestep);
+//
+  //  // remove the robot (last agent)
+  //  agents.pop_back();
+//
+  //  // update agents obstacles
+  //  for (unsigned int j = 0; j < agents.size(); j++)
+  //  {
+  //    agents[j].obstacles1.clear();
+  //    agents[j].obstacles1.push_back(computeObstacle(agents[j].position, od));
+  //  }
+//
+  //  // Take the people agents
+  //  AgentsStates humans;
+  //  for (auto p : agents)
+  //  {
+  //    AgentStatus as;
+  //    as(0, 0) = p.position[0];
+  //    as(1, 0) = p.position[1];
+  //    as(2, 0) = p.yaw;
+  //    as(3, 0) = (i + 1) * timestep;
+  //    as(4, 0) = p.linearVelocity;
+  //    as(5, 0) = p.angularVelocity;
+  //    humans.push_back(as);
+  //  }
+  //  // fill with empty agents if needed
+  //  while (humans.size() < init_people.size())
+  //  {
+  //    AgentStatus ag;
+  //    ag.setZero();
+  //    ag(3, 0) = -1.0;
+  //    humans.push_back(ag);
+  //  }
+  //  people_traj.push_back(humans);
+  //}
   return people_traj;
 }
 

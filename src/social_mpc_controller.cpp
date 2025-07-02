@@ -131,7 +131,7 @@ void SocialMPCController::publish_people_traj(const AgentsTrajectories& people, 
       m.type = m.LINE_STRIP;
       m.id = idx;
       m.action = m.ADD;
-      m.scale.x = 0.05;
+      m.scale.x = 0.5;
       m.color.a = 1.0;
       m.color.r = 1.0;
       m.color.g = 0.0;
@@ -232,12 +232,14 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   }
 
   // Get the distance transform
-  obstacle_distance_msgs::msg::ObstacleDistance transformed_od = obsdist_interface_->getDistanceTransform();
+  //obstacle_distance_msgs::msg::ObstacleDistance transformed_od = obsdist_interface_->getDistanceTransform();
 
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
 
-  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_, transformed_od, cmds, people, speed, ts);
+  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,
+                                        //transformed_od,
+                                        cmds, people, speed, ts);
   if (!optimized)
   {
     RCLCPP_WARN(logger_, "Optimization failed, using initial commands");

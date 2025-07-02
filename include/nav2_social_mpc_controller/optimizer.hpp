@@ -165,7 +165,7 @@ public:
    * @return false if optimization failed
    */
   bool optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj, const nav2_costmap_2d::Costmap2D* costmap,
-                const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
+                //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                 std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                 const geometry_msgs::msg::Twist& speed, const float time_step);
 
@@ -205,9 +205,11 @@ private:
    * @param timestep Time step
    * @return Vector of vector of agent statuses
    */
-  AgentsTrajectories project_people(const AgentsStates& init_people, const AgentTrajectory& robot_path,
-                                    const obstacle_distance_msgs::msg::ObstacleDistance& od, const float& maxtime,
-                                    const float& timestep);
+  AgentsTrajectories project_people(const AgentsStates& init_people
+                                   //const AgentTrajectory& robot_path,
+                                   // const obstacle_distance_msgs::msg::ObstacleDistance& od, const float& maxtime,
+                                   // const float& timestep
+                                  );
 
   /**
    * @brief Compute obstacle position relative to agent

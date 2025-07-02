@@ -28,6 +28,11 @@ AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
   , control_horizon_(control_horizon)
   , block_length_(block_length)
 {
+  for (unsigned int j = 0; j < agents_init.size(); j++)
+  {
+    original_agents_.col(j) << agents_init[j][0], agents_init[j][1], agents_init[j][2], agents_init[j][3],
+        agents_init[j][4], agents_init[j][5];
+  }
   safe_distance_squared_ = 4.0;
 }
 

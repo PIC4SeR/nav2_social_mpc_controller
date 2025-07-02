@@ -125,16 +125,20 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residuals) const
   {
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-        robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
+    Eigen::Matrix<T, 6, 3> agents_ = original_agents_.template cast<T>(); 
+    //auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
+    //    robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
+    auto [new_position_x, new_position_y, new_position_orientation, agents] =
+        computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,
+                        block_length_);
     int closest_index = -1;
-    double closest_distance_squared = std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < agents_init_.size(); ++i)
+    T closest_distance_squared = T(9999.0);
+    for (unsigned int i = 0; i < agents_.cols(); i++)
     {
-      double dx = agents_init_[i][0] - robot_init_.position.x;
-      double dy = agents_init_[i][1] - robot_init_.position.y;
-      double distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents_init_[i][4] > 0.05)
+      T dx = agents(0,i) - T(robot_init_.position.x);
+      T dy = agents(1,i) - T(robot_init_.position.y);
+      T distance_squared = dx * dx + dy * dy;
+      if (distance_squared < closest_distance_squared && agents(4,i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = i;
@@ -145,8 +149,8 @@ public:
       residuals[0] = T(0.0);
       return true;
     }
-    AgentStatus closest_agent;
-    closest_agent = agents_init_[closest_index];
+    Eigen::Matrix<T,6,1> closest_agent;
+    closest_agent = agents.col(closest_index);
     const auto& agent = closest_agent;
     // Compute angles.
     T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
@@ -198,6 +202,7 @@ private:
   double weight_;
   AgentsStates agents_init_;
   geometry_msgs::msg::Pose robot_init_;
+  Eigen::Matrix<double, 6, 3> original_agents_;
   unsigned int current_position_;
   double time_step_;
   unsigned int control_horizon_;

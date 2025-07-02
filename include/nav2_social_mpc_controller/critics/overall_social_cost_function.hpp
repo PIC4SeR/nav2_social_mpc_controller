@@ -156,11 +156,11 @@ public:
       } else {
         block_idx = (control_horizon_ - 1) / block_length_;
       }
-
-      // Each agent has 2 params starting at offset 2: [speed, omega]
+//
+      //// Each agent has 2 params starting at offset 2: [speed, omega]
       unsigned param_offset = 2 + 2*k;
       agents(4, k) = parameters[block_idx][param_offset];  // linear vel
-      agents(5, k) = parameters[block_idx][param_offset + 1];  // angular vel
+      agents(5, k) = T(0.0) // angular vel
     }
     residuals[0] = (T)0.0;  // Initialize residual to zero for social work
     residuals[1] = (T)0.0;  // Initialize residual to zero for agent angle
@@ -277,7 +277,7 @@ public:
     //    "Social work cost: " << residual[0] << " (wr: " << wr << ", wp: " << wp
     //                         << ", total: " << total_social_force_magnitude_sq << ")");
 
-    return (T)1.0/total_social_force_magnitude_sq * (T)work_weight_;  // Return the total social force magnitude scaled by weight
+    return (T)total_social_force_magnitude_sq * (T)work_weight_;  // Return the total social force magnitude scaled by weight
   }
   template <typename T>
   T usingProxemics(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, 3> agents) const

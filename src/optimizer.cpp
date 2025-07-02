@@ -220,16 +220,16 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     doa.params[1] = optim_status[j][5];
      // fill the 2 coordinates for each of the num_agents
     for (unsigned int k = 0; k < num_agents; ++k) {
-      doa.params[2 + 2*k]     = people_proj[j][k][4];  // first coord of agent k
-      doa.params[2 + 2*k + 1] = people_proj[j][k][5];  // second coord of agent k
+      doa.params[2 + 2*k]     = people_proj[j][k][4];  // velocity x of agent k
+      doa.params[2 + 2*k + 1] = people_proj[j][k][5];  // velocity y of agent k
     }
-    RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Dynamic optimizing velocities size: %ld",
-             doa.params.size());
+    //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Dynamic optimizing velocities size: %ld",
+    //         doa.params.size());
     variables_to_optimize.push_back(doa);
   }
-  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Variables to optimize size: %ld", variables_to_optimize.size());
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Variables to optimize size: %ld", variables_to_optimize.size());
 
-
+  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Number of projected people: %ld", closest_agent_idx);
   RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Number of agents: %ld", num_agents);
 
   // Extract the closest agent's state at each time step
@@ -381,8 +381,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     }
     Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
     auto* overall_social_cost_function_f =
-        SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_proj[0],closest_agent_idx, evolving_poses[0].pose,
-                                           i, time_step, control_horizon, block_length,found_people, true, true, true, true, true);
+        SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_proj[0], num_agents, evolving_poses[0].pose,
+                                           i, time_step, control_horizon, block_length,found_people, false, true, true, true, true);
     //auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
     //                                                      counter_step, i, time_step, control_horizon, block_length);
     //auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
@@ -391,6 +391,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     //                                                   counter_step, i, time_step, control_horizon, block_length);
     //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Adding cost functions for time step %d, block %d", i, block_used);
     unsigned int b = 2 + 2*(unsigned int)num_agents;
+    RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "b: %d, variable size: %ld" ,
+               b, variables_to_optimize[block_used].params.size());
     if (i < control_horizon)
     {
       for (unsigned int j = 0; j <= i / block_length; j++)

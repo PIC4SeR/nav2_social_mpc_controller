@@ -133,7 +133,7 @@ public:
                         block_length_);
     int closest_index = -1;
     T closest_distance_squared = T(9999.0);
-    for (unsigned int i = 0; i < agents_.cols(); i++)
+    for (unsigned int i = 0; i < agents.cols(); i++)
     {
       T dx = agents(0,i) - T(robot_init_.position.x);
       T dy = agents(1,i) - T(robot_init_.position.y);

@@ -10,6 +10,10 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_util/robot_utils.hpp"
+#include "nav2_costmap_2d/costmap_2d_ros.hpp"
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 namespace nav2_social_mpc_controller
 {
@@ -84,6 +88,12 @@ public:
    */
   bool index2Cell(const unsigned int& index, unsigned int& i, unsigned int& j);
 
+  /**
+   * @brief This function computes the obstacle distance from the costmap
+   * @param costmap_ros Costmap2DROS object containing the costmap
+   */
+  void computeObstacleDistance(nav2_costmap_2d::Costmap2DROS& costmap_ros);
+
 private:
   /**
    * @brief Transform the obstacle distance msg to the given frame ID
@@ -114,18 +124,13 @@ private:
     */
   bool transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,
                      geometry_msgs::msg::PoseStamped& out_pose) const;
-  /**
-   * @brief This callback is called when a new obstacle distance msg is received.
-   * @param msg ObstacleDistance msg
-   */
-  void obs_callback(const obstacle_distance_msgs::msg::ObstacleDistance::SharedPtr msg);
 
-  rclcpp::Subscription<obstacle_distance_msgs::msg::ObstacleDistance>::ConstSharedPtr obs_sub_;
   obstacle_distance_msgs::msg::ObstacleDistance obs_;
   std::mutex mutex_;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   tf2::Duration transform_tolerance_;
   std::string agents_frame_id_ = "map";  // Default frame ID for agents
+  int obs_thresh_ = 254;                 // Threshold for obstacle detection
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr parent;
 };

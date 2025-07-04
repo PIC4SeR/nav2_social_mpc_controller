@@ -22,6 +22,7 @@ find_package(Ceres REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(glog REQUIRED)
 find_package(nav_2d_utils REQUIRED)
+find_package(OpenCV REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -48,6 +49,7 @@ set(dependencies
   nav2_core
   tf2
   nav_2d_utils
+  OpenCV
 )
 
 set(library_name ${PROJECT_NAME})

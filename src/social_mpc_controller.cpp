@@ -230,7 +230,7 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
       p.position = out_point.point;
     }
   }
-
+  obsdist_interface_->computeObstacleDistance(*costmap_ros_);
   // Get the distance transform
   obstacle_distance_msgs::msg::ObstacleDistance transformed_od = obsdist_interface_->getDistanceTransform();
 

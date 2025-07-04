@@ -12,9 +12,6 @@ ObstacleDistInterface::ObstacleDistInterface(rclcpp_lifecycle::LifecycleNode::We
                                              tf2::Duration transform_tolerance)
 {
   auto node = parent.lock();
-  obs_sub_ = node->create_subscription<obstacle_distance_msgs::msg::ObstacleDistance>(
-      "obstacle_distance", rclcpp::SystemDefaultsQoS(),
-      std::bind(&ObstacleDistInterface::obs_callback, this, std::placeholders::_1));
   agents_frame_id_ = agents_frame_id;
   tf_buffer_ = tf_buffer;
   transform_tolerance_ = transform_tolerance;
@@ -24,22 +21,60 @@ ObstacleDistInterface::~ObstacleDistInterface()
 {
 }
 
-void ObstacleDistInterface::obs_callback(const obstacle_distance_msgs::msg::ObstacleDistance::SharedPtr msg)
+void ObstacleDistInterface::computeObstacleDistance(nav2_costmap_2d::Costmap2DROS& costmap_ros)
 {
-  auto obs = *msg;
-
-  if (obs.header.frame_id != agents_frame_id_ && !transformObstacleDistance(agents_frame_id_, obs))
+  nav2_costmap_2d::Costmap2D* costmap = costmap_ros.getCostmap();
+  int width = costmap->getSizeInCellsX();
+  int height = costmap->getSizeInCellsY();
+  unsigned char* data = costmap->getCharMap();
+  if (data == nullptr || width == 0 || height == 0)
   {
-    // If the transformation fails, we log an error
-    // but we still update the obstacle distance msg
-    // so that it can be used in the future if needed
-    RCLCPP_ERROR(rclcpp::get_logger("ObstacleDistInterface"),
-                 "Failed to transform obstacle distance msg to agents frame ID: %s", agents_frame_id_.c_str());
+    RCLCPP_ERROR(rclcpp::get_logger("ObstacleDistInterface"), "Empty costmap data");
     return;
   }
-  mutex_.lock();
-  obs_ = *msg;
-  mutex_.unlock();
+  // Convert costmap to OpenCV image
+  cv::Mat binary_map = cv::Mat::zeros(height, width, CV_8UC1);  // binary map for occupied cells
+  cv::Mat dist_map = cv::Mat::zeros(binary_map.size(), CV_32FC1);
+  cv::Mat labels = cv::Mat(binary_map.size(), CV_32SC1);      // 32-bit signed int single channel image for labels
+  cv::Mat indexes = cv::Mat::zeros(height, width, CV_32SC1);  // 32-bit signed int single channel image for indexes
+  // cv::Mat nearest_obstacle_coords = cv::Mat::zeros(height, width, CV_32SC2);  // 32-bit signed int single channel
+
+  unsigned char map_occ_thresh = (unsigned char)obs_thresh_;  // threshold for occupied cells
+
+  cv::Mat original_map = cv::Mat(height, width, CV_8UC1, data);
+
+  // use thresholding to create a binary map
+  cv::threshold(original_map, binary_map, map_occ_thresh, 255, cv::THRESH_BINARY);
+  // Compute the distance transform
+  cv::distanceTransform(binary_map, dist_map, labels, cv::DIST_L2, cv::DIST_MASK_PRECISE, cv::DIST_LABEL_PIXEL);
+  // compute labels
+  std::vector<cv::Point> obstacle_points;
+  cv::findNonZero(binary_map, obstacle_points);  // gets coordinates where binary_map
+
+  // is non-zero (occupied cells)
+  for (size_t i = 0; i < obstacle_points.size(); ++i)
+  {
+    // Get the coordinates of the obstacle points
+    // int y = obstacle_points[i].y;
+    // int x = obstacle_points[i].x;
+    // condition ( if the labels at the point is equal to i + 1, then set the
+    // nearest_obstacle_coords at that point to the coordinates of the obstacle)
+    // i + 1 because labels are 1-based
+    cv::Mat mask = (labels == (i + 1));
+    indexes.setTo(obstacle_points[i].x + obstacle_points[i].y * width,
+                  mask);  // Set the indexes at the point to the index of the obstacle point
+
+    // Set the indexes at the point to the index of the obstacle point
+  }
+  obs_.header.stamp = rclcpp::Clock().now();
+  obs_.info.width = width;
+  obs_.info.height = height;
+  obs_.info.resolution = costmap->getResolution();
+  obs_.info.origin.position.x = costmap->getOriginX();
+  obs_.info.origin.position.y = costmap->getOriginY();
+  obs_.header.frame_id = costmap_ros.getGlobalFrameID();
+  obs_.distances = std::vector<float>(dist_map.begin<float>(), dist_map.end<float>());
+  obs_.indexes = std::vector<int>(indexes.begin<int>(), indexes.end<int>());
 }
 
 obstacle_distance_msgs::msg::ObstacleDistance ObstacleDistInterface::getDistanceTransform()

@@ -687,12 +687,21 @@ Eigen::Vector2d Optimizer::computeObstacle(const Eigen::Vector2d& apos,
   }
 
   // map point (person) to cell in the distance grid
-  unsigned int xcell = (unsigned int)floor((apos[0] - od.info.origin.position.x) / od.info.resolution);
-  unsigned int ycell = (unsigned int)floor((apos[1] - od.info.origin.position.y) / od.info.resolution);
+  double x_rel =
+      std::clamp((apos[0] - od.info.origin.position.x) / od.info.resolution, 0.0, (double)od.info.width - 0.5);
+  double y_rel =
+      std::clamp((apos[1] - od.info.origin.position.y) / od.info.resolution, 0.0, (double)od.info.height - 0.5);
+
+  unsigned int xcell = (unsigned int)floor(x_rel);
+  unsigned int ycell = (unsigned int)floor(y_rel);
   // cell to index of the array
 
   if (xcell >= (unsigned int)od.info.width || ycell >= (unsigned int)od.info.height)
   {
+    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"),
+                        "ObstacleDistance grid cell for person: x=" << x_rel << ", y=" << y_rel
+                                                                    << " and origin: x=" << od.info.origin.position.x
+                                                                    << ", y=" << od.info.origin.position.y);
     RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"), "ObstacleDistance grid cell out of bounds: xcell="
                                                              << xcell << ", ycell=" << ycell << ", width="
                                                              << od.info.width << ", height=" << od.info.height);

@@ -159,8 +159,11 @@ public:
 //
       //// Each agent has 2 params starting at offset 2: [speed, omega]
       unsigned param_offset = 2 + 2*k;
-      agents(4, k) = parameters[block_idx][param_offset];  // linear vel
-      agents(5, k) = T(0.0) // angular vel
+      // parameters[block_idx][param_offset] = vx, parameters[block_idx][param_offset + 1] = vy
+      T vx = parameters[block_idx][param_offset];
+      T vy = parameters[block_idx][param_offset + 1];
+      agents(4, k) = ceres::sqrt(vx * vx + vy * vy);  // linear vel as magnitude of (vx, vy)
+      agents(5, k) = T(0.0); // angular vel
     }
     residuals[0] = (T)0.0;  // Initialize residual to zero for social work
     residuals[1] = (T)0.0;  // Initialize residual to zero for agent angle
@@ -173,7 +176,7 @@ public:
     } 
     if (use_angle_cost_ == true && found_people_ == true) {
         residuals[1] += usingAngle(robot, robot_init_,
-                                    agents_init_);// Update robot state
+                                    agents);// Update robot state
     }
     if (use_proxemics_cost_ == true && found_people_ == true) {
         residuals[2] += usingProxemics(robot,agents);  // Update robot state
@@ -262,13 +265,15 @@ public:
 
     robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the second column to an invalid state
     robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
-    for (unsigned int i = 0; i < original_agents_.cols(); i++)              // Iterate through each agent
+    for (unsigned int i = 0; i < agents.cols(); i++)              // Iterate through each agent
     {
       Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
-      ag.col(0) << original_agents_.col(i).template cast<T>();  // Set the current state of the agent
+      ag.col(0) << agents.col(i);  // Set the current state of the agent
       Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
       wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
     }
+    //std::cout << "wp: " << wp << std::endl;
+    //std::cout << "wr: " << wr << std::endl;
     T total_social_force_magnitude_sq = wr + wp + (T)1e-6;  // Avoid division by zero
 
     // sum the social works and multiply by the weight
@@ -287,17 +292,17 @@ public:
     return (T)proxemics_weight_ * proxemics_cost;           // Scale the proxemics cost by the weight
   }
   template <typename T>
-  T usingAngle(const Eigen::Matrix<T,6,1> robot,const geometry_msgs::msg::Pose robot_init_, const AgentsStates agents_init_)
+  T usingAngle(const Eigen::Matrix<T,6,1> robot,const geometry_msgs::msg::Pose robot_init_, const Eigen::Matrix<T, 6, 3>& agents)
    const
   {
     int closest_index = -1;
-    double closest_distance_squared = std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < agents_init_.size(); ++i)
+    T closest_distance_squared = T(9999.0);
+    for (unsigned int i = 0; i < agents.cols(); i++)
     {
-      double dx = agents_init_[i][0] - robot_init_.position.x;
-      double dy = agents_init_[i][1] - robot_init_.position.y;
-      double distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents_init_[i][4] > 0.05)
+      T dx = agents(0,i) - T(robot_init_.position.x);
+      T dy = agents(1,i) - T(robot_init_.position.y);
+      T distance_squared = dx * dx + dy * dy;
+      if (distance_squared < closest_distance_squared && agents(4,i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = i;
@@ -305,10 +310,10 @@ public:
     }
     if (closest_index < 0 || closest_distance_squared > safe_distance_squared_)
     {
-      return T(0.0);
+      return T(0.0);  // If no valid agent is found, return zero cost
     }
-    AgentStatus closest_agent;
-    closest_agent = agents_init_[closest_index];
+    Eigen::Matrix<T,6,1> closest_agent;
+    closest_agent = agents.col(closest_index);
     const auto& agent = closest_agent;
     // Compute angles.
     T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
@@ -376,7 +381,7 @@ public:
       Eigen::Matrix<T, 2, 1> diffDirection = diff.normalized();  // Normalize the difference vector
 
       Eigen::Matrix<T, 2, 1> aVel(agents(4, i) * ceres::cos(agents(2, i)),
-                                  agents(4, i) * ceres::sin(agents(2, i)));  // Extract the velocity of the agent
+                                  agents(5, i) * ceres::sin(agents(2, i)) );  // Extract the velocity of the agent
       Eigen::Matrix<T, 2, 1> velDiff =
           meVel - aVel;  // Calculate the difference in velocity between the robot and the agent
       Eigen::Matrix<T, 2, 1> interactionVector =
@@ -434,6 +439,7 @@ public:
       Eigen::Matrix<T, 2, 1> diff =
           mePos - aPos;                         // Calculate the difference in position between the robot and the agent
       T squared_distance = diff.squaredNorm();  // Calculate the squared distance between the robot and the agent
+      //std::cout << "squared_distance: " << squared_distance << std::endl;
       if (squared_distance < 1e-6)              // If the squared distance is too small, set a fixed direction
       {
         diff = Eigen::Matrix<T, 2, 1>((T)1e-6, (T)0.0);  // Use a fixed small direction
@@ -442,6 +448,7 @@ public:
     }
     T proxemics_cost =
         (T)alpha_ * ceres::exp(-min_distance / ((T)d0_ * (T)d0_));  // Exponential decay based on distance
+    //std::cout << "min_distance: " << min_distance << std::endl;
     return proxemics_cost;
   }
 

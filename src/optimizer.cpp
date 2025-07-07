@@ -147,7 +147,7 @@ void Optimizer::initialize(const OptimizerParams params)
  */
 bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj,
                          const nav2_costmap_2d::Costmap2D* costmap,
-                         const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
+                         //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                          std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                          const geometry_msgs::msg::Twist& speed, const float time_step)
 {
@@ -190,7 +190,12 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                                  current_cmds_w, max_time, time_step);
   // use the parametrized format to project the people in the field of view of the robot, using the obstacles and the
   // initial status of the people
-  people_proj = project_people(init_people, optim_status, obstacles, max_time, time_step);
+  people_proj = project_people(init_people
+      //, optim_status,
+    
+    //obstacles,
+    // max_time, time_step
+    );
   //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "People projected size: %ld", people_proj.size());
   
   std::vector<agent_velocity> agent_uno_velocities;
@@ -220,8 +225,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     doa.params[1] = optim_status[j][5];
      // fill the 2 coordinates for each of the num_agents
     for (unsigned int k = 0; k < num_agents; ++k) {
-      doa.params[2 + 2*k]     = people_proj[j][k][4];  // velocity x of agent k
-      doa.params[2 + 2*k + 1] = people_proj[j][k][5];  // velocity y of agent k
+      doa.params[2 + 2*k]     = people_proj[0][k][4]*ceres::cos(people_proj[0][k][2]);  // velocity x of agent k
+      doa.params[2 + 2*k + 1] = people_proj[0][k][4]*ceres::sin(people_proj[0][k][2]);  // velocity y of agent k
     }
     //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Dynamic optimizing velocities size: %ld",
     //         doa.params.size());
@@ -229,8 +234,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   }
   //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Variables to optimize size: %ld", variables_to_optimize.size());
 
-  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Number of projected people: %ld", closest_agent_idx);
-  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Number of agents: %ld", num_agents);
 
   // Extract the closest agent's state at each time step
   AgentsStates tentativo;
@@ -332,20 +335,20 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   //  evolving_agents_states.col(evolving_agents_states.cols() - 1) = agent_state;
   //}
   // start of optimization problem construction
-  std::vector<optimizing_velocities> overall_social_cost_velocities;
-  for (size_t i = 0; i < agent_uno_velocities.size(); ++i)
-  {
-      optimizing_velocities ov;
-      
-      ov.params[0] = optim_velocities[i].params[0];  // robot lv
-      ov.params[1] = optim_velocities[i].params[1];  // robot av
-      ov.params[2] = agent_uno_velocities[i].params[0];  // first agent lv
-      ov.params[3] = agent_uno_velocities[i].params[1];  // first agent av
-  
-      overall_social_cost_velocities.push_back(ov);
-  }
-  RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Overall social cost velocities size: %ld",
-           overall_social_cost_velocities.size());
+  //std::vector<optimizing_velocities> overall_social_cost_velocities;
+  //for (size_t i = 0; i < agent_uno_velocities.size(); ++i)
+  //{
+  //    optimizing_velocities ov;
+  //    
+  //    ov.params[0] = optim_velocities[i].params[0];  // robot lv
+  //    ov.params[1] = optim_velocities[i].params[1];  // robot av
+  //    ov.params[2] = agent_uno_velocities[i].params[0];  // first agent lv
+  //    ov.params[3] = agent_uno_velocities[i].params[1];  // first agent av
+  //
+  //    overall_social_cost_velocities.push_back(ov);
+  //}
+  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Overall social cost velocities size: %ld",
+  //         overall_social_cost_velocities.size());
   for (unsigned int i = 0; i < optim_velocities.size(); i++)  // i is the index of the current time step
   {
     
@@ -358,12 +361,12 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     {
       parameter_blocks.push_back(variables_to_optimize[block_used].params.data());
     }
-    RCLCPP_INFO(
-      rclcpp::get_logger("Optimizer"),
-      "Total parameter blocks size: %ld, each block params size: %ld, total params: %ld",
-      parameter_blocks.size(),
-      variables_to_optimize[block_used].params.size(),
-      static_cast<long>(parameter_blocks.size() * variables_to_optimize[block_used].params.size()));
+    //RCLCPP_INFO(
+    //  rclcpp::get_logger("Optimizer"),
+    //  "Total parameter blocks size: %ld, each block params size: %ld, total params: %ld",
+    //  parameter_blocks.size(),
+    //  variables_to_optimize[block_used].params.size(),
+    //  static_cast<long>(parameter_blocks.size() * variables_to_optimize[block_used].params.size()));
 
     //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Optimizing velocities for time step %d, block %d, size %ld", i, block_used, parameter_blocks.size());
     //double counter_step = counter * time_step;
@@ -375,14 +378,14 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     //  parameter_blocks.back()[0], parameter_blocks.back()[1];  // x, y, yaw, t, lv, av
     //new_states = project_people_1_step(evolving_agents_states, robot_to_optimize, obstacles, max_time, time_step);
     //evolving_agents_states = new_states;
-    bool found_people = true;
-    if (people.people.size() == 0){
-      found_people = false;
+    bool found_people = false;
+    if (num_agents > 0){
+      found_people = true;
     }
     Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
     auto* overall_social_cost_function_f =
         SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_proj[0], num_agents, evolving_poses[0].pose,
-                                           i, time_step, control_horizon, block_length,found_people, false, true, true, true, true);
+                                           i, time_step, control_horizon, block_length,found_people, true, true, true, true, true);
     //auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
     //                                                      counter_step, i, time_step, control_horizon, block_length);
     //auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[i + 1], evolving_poses[0].pose,
@@ -391,8 +394,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     //                                                   counter_step, i, time_step, control_horizon, block_length);
     //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Adding cost functions for time step %d, block %d", i, block_used);
     unsigned int b = 2 + 2*(unsigned int)num_agents;
-    RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "b: %d, variable size: %ld" ,
-               b, variables_to_optimize[block_used].params.size());
+    //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "b: %d, variable size: %ld" ,
+    //           b, variables_to_optimize[block_used].params.size());
     if (i < control_horizon)
     {
       for (unsigned int j = 0; j <= i / block_length; j++)
@@ -505,8 +508,23 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 0, 0.6);   // upper bound for linear velocity
     problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 1, -1.4);  // lower bound for angular velocity
     problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 1, 1.4);   // upper bound for angular velocity
+    for (unsigned int j = 0; j < num_agents; j++) {
+      if (people_proj[0][j][4] < 0.01) {
+        RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"), "Agent " << j << " has a velocity of 0, setting bounds to 0");
+        problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 2 + 2*j, -0.1);   // lower bound for agent j linear velocity
+        problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 2 + 2*j, 0.1);   // upper bound for agent j linear velocity
+        problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 2 + 2*j + 1, -0.1); // lower bound for agent j angular velocity
+        problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 2 + 2*j + 1, 0.1); // upper bound for agent j angular velocity
+      }
+      else {
+      problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 2 + 2*j, -1.0);   // lower bound for agent j linear velocity
+      problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 2 + 2*j, 1.0);   // upper bound for agent j linear velocity
+      problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 2 + 2*j + 1, -1.0); // lower bound for agent j angular velocity
+      problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 2 + 2*j + 1, 1.0); // upper bound for agent j angular velocity
+    }
     //problem.SetParameterLowerBound(variables_to_optimize[i].params, 2, 0.0);   // lower bound for first agent linear velocity
     //problem.SetParameterUpperBound(variables_to_optimize[i].params, 2, 0.6);   // upper bound for first agent linear velocity
+  }
   }
 
   ceres::Solve(options_, &problem, &summary);
@@ -518,7 +536,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     return false;
   }
 
-  for (unsigned int i = control_horizon / block_length; i < optim_velocities.size(); i++)
+  for (unsigned int i = control_horizon / block_length; i < variables_to_optimize.size(); i++)
   {
     variables_to_optimize[i].params[0] = variables_to_optimize[(control_horizon - 1) / block_length].params[0];
     variables_to_optimize[i].params[1] = variables_to_optimize[(control_horizon - 1) / block_length].params[1];
@@ -592,6 +610,8 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people)
     double yaw = atan2(p.velocity.y, p.velocity.x);
     double lv = sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y);
     AgentStatus st;
+    if (lv < 1e-6)
+      lv = 1e-6;
     st << (double)p.position.x, (double)p.position.y, yaw, 0.0, lv, (double)p.velocity.z;
     people_status.push_back(st);
   }
@@ -682,11 +702,13 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
 }
 
 // we project the people state for each time step of the robot path
-AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people, const AgentTrajectory& robot_path,
-                                             const obstacle_distance_msgs::msg::ObstacleDistance& od,
-                                             const float& maxtime, const float& timestep)
+AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people
+                                              //    , const AgentTrajectory& robot_path,
+                                             //const obstacle_distance_msgs::msg::ObstacleDistance& od,
+                                            // const float& maxtime, const float& timestep
+                                            )
 {
-  float naive_goal_time = maxtime;  // secs
+  //float naive_goal_time = maxtime;  // secs
   // double people_desired_vel = 1.0;
   AgentsTrajectories people_traj;
   people_traj.push_back(init_people);
@@ -695,168 +717,181 @@ AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people, co
   // FOR EACH STEP. THAT OBSTACLE POSITION MUST BE IN THE
   // SAME COORDINATE FRAME THAT THE AGENT POSITION.
 
-  std::vector<sfm_controller::Agent> agents;
-
-  // transform people to sfm agents
-  for (unsigned int i = 0; i < init_people.size(); i++)
-  {
-    // if person not valid, skip it
-    if (init_people[i][3] == -1)
-      continue;
-
-    sfm_controller::Agent a;
-    a.id = i + 1;
-    a.position << init_people[i][0], init_people[i][1];
-    a.yaw = init_people[i][2];
-    a.linearVelocity = init_people[i][4];
-    a.angularVelocity = init_people[i][5];
-
-    a.velocity << a.linearVelocity * cos(a.yaw), a.linearVelocity * sin(a.yaw);
-    a.desiredVelocity = 0.5;  // people_desired_vel; // could be
-                              // computed somehow???
-    a.radius = 0.5;
-    // compute goal with the Constant Velocity Model
-    sfm_controller::Goal g;
-    g.radius = 0.25;
-    Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
-    g.center = gpos;
-    a.goals.push_back(g);
-    // Fill the obstacles
-
-    // check if the obstacle distance message is valid
-    // if the map has 100x100 cells
-    // TODO use the costmap to compute the obstacles
-    if (od.info.width == 100 && od.info.height == 100)
-    {
-      RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
-                         "ObstacleDistance grid is NOT  valid with size: " << od.info.width << "x" << od.info.height);
-      continue;
-    }
-
-    a.obstacles1.push_back(computeObstacle(a.position, od));
-    agents.push_back(a);
-  }
-
-
-  // compute for each robot state of the path
-  for (unsigned int i = 0; i < robot_path.size() - 1; i++)
-  {
-    // robot as sfm agent
-    sfm_controller::Agent sfmrobot;
-    sfmrobot.desiredVelocity = 0.6;
-    sfmrobot.radius = 0.5;
-    sfmrobot.id = 0;
-    sfmrobot.position << robot_path[i][0], robot_path[i][1];
-    sfmrobot.yaw = robot_path[i][2];
-    sfmrobot.linearVelocity = robot_path[i][4];
-    sfmrobot.angularVelocity = robot_path[i][5];
-    // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
-    sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw), sfmrobot.linearVelocity * sin(sfmrobot.yaw);
-    sfm_controller::Goal g;
-    g.radius = 0.25;
-    Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
-    g.center = gpos;
-    sfmrobot.goals.push_back(g);
-
-    // add the robot to the agents
-    agents.push_back(sfmrobot);
-
-    // Compute Social Forces
-    sfm_controller::SFM.computeForces(agents);
-    // Project the people movement according to the SFM
-    sfm_controller::SFM.updatePosition(agents, timestep);
-
-    // remove the robot (last agent)
-    agents.pop_back();
-
-    // update agents obstacles
-    for (unsigned int j = 0; j < agents.size(); j++)
-    {
-      agents[j].obstacles1.clear();
-      agents[j].obstacles1.push_back(computeObstacle(agents[j].position, od));
-    }
-
-    // Take the people agents
-    AgentsStates humans;
-    for (auto p : agents)
-    {
-      AgentStatus as;
-      as(0, 0) = p.position[0];
-      as(1, 0) = p.position[1];
-      as(2, 0) = p.yaw;
-      as(3, 0) = (i + 1) * timestep;
-      as(4, 0) = p.linearVelocity;
-      as(5, 0) = p.angularVelocity;
-      humans.push_back(as);
-    }
-    // fill with empty agents if needed
-    while (humans.size() < init_people.size())
-    {
-      AgentStatus ag;
-      ag.setZero();
-      ag(3, 0) = -1.0;
-      humans.push_back(ag);
-    }
-    people_traj.push_back(humans);
-  }
+  //std::vector<sfm_controller::Agent> agents;
+//
+  //// transform people to sfm agents
+  //for (unsigned int i = 0; i < init_people.size(); i++)
+  //{
+  //  // if person not valid, skip it
+  //  if (init_people[i][3] == -1)
+  //    continue;
+//
+  //  sfm_controller::Agent a;
+  //  a.id = i + 1;
+  //  a.position << init_people[i][0], init_people[i][1];
+  //  a.yaw = init_people[i][2];
+  //  a.linearVelocity = init_people[i][4];
+  //  a.angularVelocity = init_people[i][5];
+//
+  //  a.velocity << a.linearVelocity * cos(a.yaw), a.linearVelocity * sin(a.yaw);
+  //  a.desiredVelocity = 0.5;  // people_desired_vel; // could be
+  //                            // computed somehow???
+  //  a.radius = 0.5;
+  //  // compute goal with the Constant Velocity Model
+  //  sfm_controller::Goal g;
+  //  g.radius = 0.25;
+  //  Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
+  //  g.center = gpos;
+  //  a.goals.push_back(g);
+  //  a.obstacles1.clear();  // clear the obstacles for each agent
+  //  
+  //  // Fill the obstacles
+//
+  //  // check if the obstacle distance message is valid
+  //  // if the map has 100x100 cells
+  //  // TODO use the costmap to compute the obstacles
+  //  //if (od.info.width == 100 && od.info.height == 100)
+  //  //{
+  //  //  RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
+  //  //                     "ObstacleDistance grid is NOT  valid with size: " << od.info.width << "x" << od.info.height);
+  //  //  continue;
+  //  //}
+////
+  //  //a.obstacles1.push_back(computeObstacle(a.position, od));
+  //  agents.push_back(a);
+  //}
+//
+//
+  //// compute for each robot state of the path
+  //for (unsigned int i = 0; i < robot_path.size() - 1; i++)
+  //{
+  //  // robot as sfm agent
+  //  sfm_controller::Agent sfmrobot;
+  //  sfmrobot.desiredVelocity = 0.6;
+  //  sfmrobot.radius = 0.5;
+  //  sfmrobot.id = 0;
+  //  sfmrobot.position << robot_path[i][0], robot_path[i][1];
+  //  sfmrobot.yaw = robot_path[i][2];
+  //  sfmrobot.linearVelocity = robot_path[i][4];
+  //  sfmrobot.angularVelocity = robot_path[i][5];
+  //  // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
+  //  sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw), sfmrobot.linearVelocity * sin(sfmrobot.yaw);
+  //  sfm_controller::Goal g;
+  //  g.radius = 0.25;
+  //  Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
+  //  g.center = gpos;
+  //  sfmrobot.goals.push_back(g);
+//
+  //  // add the robot to the agents
+  //  agents.push_back(sfmrobot);
+//
+  //  // Compute Social Forces
+  //  sfm_controller::SFM.computeForces(agents);
+  //  // Project the people movement according to the SFM
+  //  sfm_controller::SFM.updatePosition(agents, timestep);
+//
+  //  // remove the robot (last agent)
+  //  agents.pop_back();
+//
+  //  // update agents obstacles
+  //  for (unsigned int j = 0; j < agents.size(); j++)
+  //  {
+  //    agents[j].obstacles1.clear();
+  //    //agents[j].obstacles1.push_back(computeObstacle(agents[j].position, od));
+  //  }
+//
+  //  // Take the people agents
+  //  AgentsStates humans;
+  //  for (auto p : agents)
+  //  {
+  //    AgentStatus as;
+  //    as(0, 0) = p.position[0];
+  //    as(1, 0) = p.position[1];
+  //    as(2, 0) = p.yaw;
+  //    as(3, 0) = (i + 1) * timestep;
+  //
+  //    if (p.linearVelocity < 1e-6)
+  //    {
+  //      as(4, 0) = 1e-6;  // linear velocity
+  //      as(5, 0) = 1e-6;  // angular velocity
+  //    }
+  //    else
+  //    {
+  //    as(4, 0) = p.linearVelocity;
+  //    as(5, 0) = p.angularVelocity;
+  //    }
+  //    
+  //    humans.push_back(as);
+  //  }
+  //  // fill with empty agents if needed
+  //  while (humans.size() < init_people.size())
+  //  {
+  //    AgentStatus ag;
+  //    ag.setZero();
+  //    ag(3, 0) = -1.0;
+  //    humans.push_back(ag);
+  //  }
+  //  people_traj.push_back(humans);
+  //}
   return people_traj;
 }
 
-Eigen::Vector2d Optimizer::computeObstacle(const Eigen::Vector2d& apos,
-                                           const obstacle_distance_msgs::msg::ObstacleDistance& od)
-{
-  if (od.distances.empty() || od.indexes.empty())
-  {
-    throw std::runtime_error("ObstacleDistance grid is empty");
-  }
-  if (od.info.width <= 0 || od.info.height <= 0)
-  {
-    throw std::runtime_error("ObstacleDistance grid has invalid size");
-  }
-  if (od.info.resolution <= 0.0)
-  {
-    throw std::runtime_error("ObstacleDistance grid has invalid resolution");
-  }
-
-  // map point (person) to cell in the distance grid
-  unsigned int xcell = (unsigned int)floor((apos[0] - od.info.origin.position.x) / od.info.resolution);
-  unsigned int ycell = (unsigned int)floor((apos[1] - od.info.origin.position.y) / od.info.resolution);
-  // cell to index of the array
-
-  if (xcell >= (unsigned int)od.info.width || ycell >= (unsigned int)od.info.height)
-  {
-    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"), "ObstacleDistance grid cell out of bounds: xcell="
-                                                             << xcell << ", ycell=" << ycell << ", width="
-                                                             << od.info.width << ", height=" << od.info.height);
-    throw std::runtime_error("ObstacleDistance grid cell out of bounds");
-  }
-
-  unsigned int index = xcell + ycell * od.info.width;
-
-  float dist = od.distances[index];  // not used
-  unsigned int ob_idx = od.indexes[index];
-
-  if (ob_idx >= od.info.width * od.info.height)
-  {
-    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"),
-                        "ObstacleDistance grid index out of bounds: ob_idx=" << ob_idx << ", width=" << od.info.width
-                                                                             << ", height=" << od.info.height);
-    throw std::runtime_error("ObstacleDistance grid index out of bounds");
-  }
-  // const div_t result = div(ob_idx, (int)od.info.width);
-  ycell = floor(ob_idx / od.info.width);
-  xcell = ob_idx % od.info.width;
-
-  // cell to world point (obstacle)
-  float x = xcell * od.info.resolution + od.info.origin.position.x;
-  float y = ycell * od.info.resolution + od.info.origin.position.y;
-  Eigen::Vector2d obstacle(x, y);
-
-  // vector between person and obstacle
-  Eigen::Vector2d diff = apos - obstacle;
-
-  RCLCPP_DEBUG(rclcpp::get_logger("optimizer"), "Obstacle at (%f, %f) with distance %f", x, y, dist);
-  return diff;
-}
+//Eigen::Vector2d Optimizer::computeObstacle(const Eigen::Vector2d& apos,
+//
+//                                           const obstacle_distance_msgs::msg::ObstacleDistance& od)
+//{
+//  if (od.distances.empty() || od.indexes.empty())
+//  {
+//    throw std::runtime_error("ObstacleDistance grid is empty");
+//  }
+//  if (od.info.width <= 0 || od.info.height <= 0)
+//  {
+//    throw std::runtime_error("ObstacleDistance grid has invalid size");
+//  }
+//  if (od.info.resolution <= 0.0)
+//  {
+//    throw std::runtime_error("ObstacleDistance grid has invalid resolution");
+//  }
+//
+//  // map point (person) to cell in the distance grid
+//  unsigned int xcell = (unsigned int)floor((apos[0] - od.info.origin.position.x) / od.info.resolution);
+//  unsigned int ycell = (unsigned int)floor((apos[1] - od.info.origin.position.y) / od.info.resolution);
+//  // cell to index of the array
+//
+//  if (xcell >= (unsigned int)od.info.width || ycell >= (unsigned int)od.info.height)
+//  {
+//    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"), "ObstacleDistance grid cell out of bounds: xcell="
+//                                                             << xcell << ", ycell=" << ycell << ", width="
+//                                                             << od.info.width << ", height=" << od.info.height);
+//    throw std::runtime_error("ObstacleDistance grid cell out of bounds");
+//  }
+//
+//  unsigned int index = xcell + ycell * od.info.width;
+//
+//  float dist = od.distances[index];  // not used
+//  unsigned int ob_idx = od.indexes[index];
+//
+//  if (ob_idx >= od.info.width * od.info.height)
+//  {
+//    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"),
+//                        "ObstacleDistance grid index out of bounds: ob_idx=" << ob_idx << ", width=" << od.info.width
+//                                                                             << ", height=" << od.info.height);
+//    throw std::runtime_error("ObstacleDistance grid index out of bounds");
+//  }
+//  // const div_t result = div(ob_idx, (int)od.info.width);
+//  ycell = floor(ob_idx / od.info.width);
+//  xcell = ob_idx % od.info.width;
+//
+//  // cell to world point (obstacle)
+//  float x = xcell * od.info.resolution + od.info.origin.position.x;
+//  float y = ycell * od.info.resolution + od.info.origin.position.y;
+//  Eigen::Vector2d obstacle(x, y);
+//
+//  // vector between person and obstacle
+//  Eigen::Vector2d diff = apos - obstacle;
+//
+//  RCLCPP_DEBUG(rclcpp::get_logger("optimizer"), "Obstacle at (%f, %f) with distance %f", x, y, dist);
+//  return diff;
+//}
 
 }  // namespace nav2_social_mpc_controller

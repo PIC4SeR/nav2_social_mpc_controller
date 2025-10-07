@@ -31,7 +31,7 @@ controller_server:
       max_angular_accel: 20.0
       simulate_ahead_time: 0.3
       rotate_to_goal_heading: false
-      primary_controller: nav2_social_mpc_controller::SocialMPCController
+      primary_controller: mpc_enlarged_state::MPCEnlargedState
       trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6
@@ -55,7 +55,7 @@ controller_server:
         current_cmds_weight: 0.5
         weights:
           distance_weight: 20.0
-          social_weight: 0.0 #400.0
+          social_weight: 400.0 #400.0
           velocity_weight: 10.0
           angle_weight: 300.0
           agent_angle_weight: 40.0 #50.0

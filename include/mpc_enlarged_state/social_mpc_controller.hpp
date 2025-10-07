@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__MPC_CONTROLLER_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__MPC_CONTROLLER_HPP_
+#ifndef MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_
+#define MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_
 
 #include <algorithm>
 #include <memory>
@@ -22,10 +22,10 @@
 
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "nav2_core/controller.hpp"
-#include "nav2_social_mpc_controller/obstacle_distance_interface.hpp"
-#include "nav2_social_mpc_controller/optimizer.hpp"
-#include "nav2_social_mpc_controller/path_trajectorizer.hpp"
-#include "nav2_social_mpc_controller/people_interface.hpp"
+#include "mpc_enlarged_state/obstacle_distance_interface.hpp"
+#include "mpc_enlarged_state/optimizer.hpp"
+#include "mpc_enlarged_state/path_trajectorizer.hpp"
+#include "mpc_enlarged_state/people_interface.hpp"
 #include "nav2_util/odometry_utils.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
@@ -35,30 +35,30 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/robot_utils.hpp"
-#include "nav2_social_mpc_controller/tools/path_handler.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_enlarged_state/tools/path_handler.hpp"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 /**
- * @class nav2_social_mpc_controller::SocialMPCController
+ * @class mpc_enlarged_state::MPCEnlargedState
  * @brief social mpc controller plugin
  */
-class SocialMPCController : public nav2_core::Controller
+class MPCEnlargedState : public nav2_core::Controller
 {
 public:
   /**
    * @brief Constructor for
-   * nav2_social_mpc_controller::SocialMPCController
+   * mpc_enlarged_state::MPCEnlargedState
    */
-  SocialMPCController() = default;
+  MPCEnlargedState() = default;
 
   /**
    * @brief Destrructor for
-   * nav2_social_mpc_controller::SocialMPCController
+   * mpc_enlarged_state::MPCEnlargedState
    */
-  ~SocialMPCController() override = default;
+  ~MPCEnlargedState() override = default;
 
   /**
    * @brief Configure controller state machine
@@ -153,7 +153,7 @@ protected:
   OptimizerParams optimizer_params_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D* costmap_;
-  rclcpp::Logger logger_{ rclcpp::get_logger("SocialMPCController") };
+  rclcpp::Logger logger_{ rclcpp::get_logger("MPCEnlargedState") };
 
   double speed_limit;
   bool percentage;
@@ -187,6 +187,6 @@ protected:
   std::unique_ptr<mpc::PathHandler> path_handler_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__MPC_CONTROLLER_HPP_
+#endif  // MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_

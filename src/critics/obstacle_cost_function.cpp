@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/obstacle_cost_function.hpp"
-namespace nav2_social_mpc_controller
+#include "mpc_enlarged_state/critics/obstacle_cost_function.hpp"
+namespace mpc_enlarged_state
 {
 
 ObstacleCost::ObstacleCost(
@@ -33,4 +33,4 @@ ObstacleCost::ObstacleCost(
   block_length_ = block_length;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

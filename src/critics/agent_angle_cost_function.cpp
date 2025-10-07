@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/agent_angle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
@@ -31,4 +31,4 @@ AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
   safe_distance_squared_ = 4.0;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

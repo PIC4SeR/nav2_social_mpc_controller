@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__STATE_CACHE_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__STATE_CACHE_HPP_
+#ifndef MPC_ENLARGED_STATE__STATE_CACHE_HPP_
+#define MPC_ENLARGED_STATE__STATE_CACHE_HPP_
 
 #include "ceres/ceres.h"
 #include "ceres/cost_function.h"
@@ -8,8 +8,8 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
-namespace nav2_social_mpc_controller
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
+namespace mpc_enlarged_state
 {
 
 //template <typename T>
@@ -68,4 +68,4 @@ namespace nav2_social_mpc_controller
 //}
 }
 
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__STATE_CACHE_HPP_
+#endif  // MPC_ENLARGED_STATE__STATE_CACHE_HPP_

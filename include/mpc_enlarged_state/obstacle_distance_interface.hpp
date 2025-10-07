@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__OBSTACLE_INTERFACE_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__OBSTACLE_INTERFACE_HPP_
+#ifndef MPC_ENLARGED_STATE__OBSTACLE_INTERFACE_HPP_
+#define MPC_ENLARGED_STATE__OBSTACLE_INTERFACE_HPP_
 
 #include <mutex>
 
@@ -11,7 +11,7 @@
 #include "tf2_ros/buffer.h"
 #include "nav2_util/robot_utils.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 class ObstacleDistInterface
@@ -129,6 +129,6 @@ private:
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr parent;
 };
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 #endif

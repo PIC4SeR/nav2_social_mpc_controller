@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__TRAJECTORY_MEMORY_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__TRAJECTORY_MEMORY_HPP_
+#ifndef MPC_ENLARGED_STATE__TRAJECTORY_MEMORY_HPP_
+#define MPC_ENLARGED_STATE__TRAJECTORY_MEMORY_HPP_
 
 #include <math.h>
 
@@ -18,7 +18,7 @@
 #include "ceres/cost_function.h"
 #include "ceres/cubic_interpolation.h"
 #include "geometry_msgs/msg/twist_stamped.hpp"
-#include "nav2_social_mpc_controller/sfm.hpp"
+#include "mpc_enlarged_state/sfm.hpp"
 #include "nav2_util/node_utils.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
@@ -27,7 +27,7 @@
 
 // This singleton class is used to store the previous trajectory and commands, in order to give a soft start to the
 // optimizer Still needs to be tested, but it should work
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 class TrajectoryMemory
 {
@@ -47,5 +47,5 @@ private:
   {
   }  // Private constructor
 };
-}  // namespace nav2_social_mpc_controller
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__TRAJECTORY_MEMORY_HPP_
+}  // namespace mpc_enlarged_state
+#endif  // MPC_ENLARGED_STATE__TRAJECTORY_MEMORY_HPP_

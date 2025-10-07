@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__DISTANCE_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__DISTANCE_COST_FUNCTION_HPP_
+#ifndef MPC_ENLARGED_STATE__DISTANCE_COST_FUNCTION_HPP_
+#define MPC_ENLARGED_STATE__DISTANCE_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
-#include "nav2_social_mpc_controller/update_state.hpp"
+#include "mpc_enlarged_state/update_state.hpp"
 /**
  * @file distance_cost_function.hpp
  * @brief Defines the DistanceCostFunction for social MPC control.
@@ -51,7 +51,7 @@
  * @author
  * @date
  */
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 class DistanceCost
@@ -141,6 +141,6 @@ private:
   geometry_msgs::msg::Pose robot_init_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 #endif

@@ -1,6 +1,6 @@
-#include "nav2_social_mpc_controller/obstacle_distance_interface.hpp"
+#include "mpc_enlarged_state/obstacle_distance_interface.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 // TODO:
@@ -153,4 +153,4 @@ bool ObstacleDistInterface::transformPose(const std::string frame, const geometr
   return false;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

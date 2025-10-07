@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__UPDATE_STATE_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__UPDATE_STATE_HPP_
+#ifndef MPC_ENLARGED_STATE__UPDATE_STATE_HPP_
+#define MPC_ENLARGED_STATE__UPDATE_STATE_HPP_
 
 #include <Eigen/Core>
 #include <vector>
@@ -11,9 +11,9 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 /**
@@ -152,6 +152,6 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
   
 
 }
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 #endif  // MPC_HPP

@@ -1,10 +1,10 @@
-#include "nav2_social_mpc_controller/optimizer.hpp"
+#include "mpc_enlarged_state/optimizer.hpp"
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "tf2/utils.h"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 /**
@@ -894,4 +894,4 @@ AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people
 //  return diff;
 //}
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

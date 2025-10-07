@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__OVERALL_SOCIAL_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__OVERALL_SOCIAL_COST_FUNCTION_HPP_
+#ifndef MPC_ENLARGED_STATE__OVERALL_SOCIAL_COST_FUNCTION_HPP_
+#define MPC_ENLARGED_STATE__OVERALL_SOCIAL_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "glog/logging.h"
-#include "nav2_social_mpc_controller/update_state.hpp"
-#include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_enlarged_state/update_state.hpp"
+#include "mpc_enlarged_state/critics/social_work_cost_function.hpp"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 
@@ -486,6 +486,6 @@ private:
   
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 #endif

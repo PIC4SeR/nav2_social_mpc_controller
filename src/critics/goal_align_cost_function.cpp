@@ -11,12 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "nav2_social_mpc_controller/critics/goal_align_cost_function.hpp"
-#include "nav2_social_mpc_controller/state_cache.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_enlarged_state/critics/goal_align_cost_function.hpp"
+#include "mpc_enlarged_state/state_cache.hpp"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 GoalAlignCost::GoalAlignCost(
@@ -36,4 +36,4 @@ GoalAlignCost::GoalAlignCost(
 {
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

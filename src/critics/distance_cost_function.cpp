@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/distance_cost_function.hpp"
-namespace nav2_social_mpc_controller
+#include "mpc_enlarged_state/critics/distance_cost_function.hpp"
+namespace mpc_enlarged_state
 {
 
 DistanceCost::DistanceCost(
@@ -29,4 +29,4 @@ DistanceCost::DistanceCost(
   control_horizon_ = control_horizon;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

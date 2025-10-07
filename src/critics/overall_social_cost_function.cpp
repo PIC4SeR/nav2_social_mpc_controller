@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/overall_social_cost_function.hpp"
+#include "mpc_enlarged_state/critics/overall_social_cost_function.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, double proxemics_weight,
@@ -62,4 +62,4 @@ SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, dou
   safe_distance_squared_ = 4.0;  // Safe distance squared to avoid division by zero in proxemics cost
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
+#ifndef MPC_ENLARGED_STATE__OPTIMIZER_HPP_
+#define MPC_ENLARGED_STATE__OPTIMIZER_HPP_
 
 #include <math.h>
 #include <tf2/utils.h>
@@ -36,27 +36,27 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 // cost functions
-#include "nav2_social_mpc_controller/critics/agent_angle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/angle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/curvature_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/distance_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/goal_align_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/obstacle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/overall_social_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/velocity_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/velocity_feasibility_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/proxemics_cost_function.hpp"
-#include "nav2_social_mpc_controller/update_state.hpp"
+#include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/angle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/curvature_cost_function.hpp"
+#include "mpc_enlarged_state/critics/distance_cost_function.hpp"
+#include "mpc_enlarged_state/critics/goal_align_cost_function.hpp"
+#include "mpc_enlarged_state/critics/obstacle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/social_work_cost_function.hpp"
+#include "mpc_enlarged_state/critics/overall_social_cost_function.hpp"
+#include "mpc_enlarged_state/critics/velocity_cost_function.hpp"
+#include "mpc_enlarged_state/critics/velocity_feasibility_cost_function.hpp"
+#include "mpc_enlarged_state/critics/proxemics_cost_function.hpp"
+#include "mpc_enlarged_state/update_state.hpp"
 
-#include "nav2_social_mpc_controller/sfm.hpp"
-#include "nav2_social_mpc_controller/trajectory_memory.hpp"
+#include "mpc_enlarged_state/sfm.hpp"
+#include "mpc_enlarged_state/trajectory_memory.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
-#include "nav2_social_mpc_controller/state_cache.hpp"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
+#include "mpc_enlarged_state/state_cache.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 struct OptimizerParams
@@ -174,7 +174,7 @@ public:
 
   /**
    * @brief Destrructor for
-   * nav2_social_mpc_controller::SocialMPCController
+   * mpc_enlarged_state::MPCEnlargedState
    */
   ~Optimizer();
 
@@ -280,6 +280,6 @@ private:
   rclcpp::Time path_time_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
+#endif  // MPC_ENLARGED_STATE__OPTIMIZER_HPP_

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/social_mpc_controller.hpp"
+#include "mpc_enlarged_state/social_mpc_controller.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -42,10 +42,10 @@ double clamp(double value, double min, double max)
   return value;
 }
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
-void SocialMPCController::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent, std::string name,
+void MPCEnlargedState::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent, std::string name,
                                     std::shared_ptr<tf2_ros::Buffer> tf,
                                     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
@@ -85,39 +85,39 @@ void SocialMPCController::configure(const rclcpp_lifecycle::LifecycleNode::WeakP
   people_traj_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>("people_projected_trajectory", 1);
 }
 
-void SocialMPCController::cleanup()
+void MPCEnlargedState::cleanup()
 {
   RCLCPP_INFO(logger_,
               "Cleaning up controller: %s of type"
-              "nav2_social_mpc_controller::SocialMPCController",
+              "mpc_enlarged_state::MPCEnlargedState",
               plugin_name_.c_str());
   local_path_pub_.reset();
   people_traj_pub_.reset();
 }
 
-void SocialMPCController::activate()
+void MPCEnlargedState::activate()
 {
   RCLCPP_INFO(logger_,
               "Activating controller: %s of type "
-              "nav2_social_mpc_controller::SocialMPCController",
+              "mpc_enlarged_state::MPCEnlargedState",
               plugin_name_.c_str());
   trajectorizer_->activate();
   local_path_pub_->on_activate();
   people_traj_pub_->on_activate();
 }
 
-void SocialMPCController::deactivate()
+void MPCEnlargedState::deactivate()
 {
   RCLCPP_INFO(logger_,
               "Deactivating controller: %s of type "
-              "nav2_social_mpc_controller::SocialMPCController",
+              "mpc_enlarged_state::MPCEnlargedState",
               plugin_name_.c_str());
   trajectorizer_->deactivate();
   local_path_pub_->on_deactivate();
   people_traj_pub_->on_deactivate();
 }
 
-void SocialMPCController::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
+void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
 {
   // Create one marker for each person
   size_t npeople = people[0].size();
@@ -159,7 +159,7 @@ void SocialMPCController::publish_people_traj(const AgentsTrajectories& people, 
   people_traj_pub_->publish(ma);
 }
 
-geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
+geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::Twist& speed,
     nav2_core::GoalChecker* goal_checker)
 {
@@ -274,12 +274,12 @@ geometry_msgs::msg::TwistStamped SocialMPCController::computeVelocityCommands(
   return cmd_vel;
 }
 
-void SocialMPCController::setPlan(const nav_msgs::msg::Path& path)
+void MPCEnlargedState::setPlan(const nav_msgs::msg::Path& path)
 {
   path_handler_->setPlan(path);
 }
 
-void SocialMPCController::setSpeedLimit(const double& speed_limit, const bool& percentage)
+void MPCEnlargedState::setSpeedLimit(const double& speed_limit, const bool& percentage)
 {
   double speed_limit_ = speed_limit;
   bool percentage_ = percentage;
@@ -300,7 +300,7 @@ void SocialMPCController::setSpeedLimit(const double& speed_limit, const bool& p
   }
 }
 
-bool SocialMPCController::transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,
+bool MPCEnlargedState::transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,
                                         geometry_msgs::msg::PoseStamped& out_pose) const
 {
   if (in_pose.header.frame_id == frame)
@@ -322,7 +322,7 @@ bool SocialMPCController::transformPose(const std::string frame, const geometry_
   return false;
 }
 
-bool SocialMPCController::transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
+bool MPCEnlargedState::transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
                                          geometry_msgs::msg::PointStamped& out_point) const
 {
   try
@@ -337,7 +337,7 @@ bool SocialMPCController::transformPoint(const std::string frame, const geometry
   return false;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 // Register this controller as a nav2_core plugin
-PLUGINLIB_EXPORT_CLASS(nav2_social_mpc_controller::SocialMPCController, nav2_core::Controller)
+PLUGINLIB_EXPORT_CLASS(mpc_enlarged_state::MPCEnlargedState, nav2_core::Controller)

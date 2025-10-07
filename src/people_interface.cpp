@@ -1,6 +1,6 @@
-#include "nav2_social_mpc_controller/people_interface.hpp"
+#include "mpc_enlarged_state/people_interface.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 PeopleInterface::PeopleInterface(rclcpp_lifecycle::LifecycleNode::WeakPtr parent)
@@ -28,4 +28,4 @@ people_msgs::msg::People PeopleInterface::getPeople()
   return p;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state

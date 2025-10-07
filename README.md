@@ -64,7 +64,7 @@ controller_server:
       yaw_goal_tolerance: 0.25
       stateful: True
     FollowPath:
-      plugin: "nav2_social_mpc_controller::SocialMPCController"
+      plugin: "mpc_enlarged_state::MPCEnlargedState"
       trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

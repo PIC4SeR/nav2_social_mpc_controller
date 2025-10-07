@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__ANGLE_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__ANGLE_COST_FUNCTION_HPP_
+#ifndef MPC_ENLARGED_STATE__ANGLE_COST_FUNCTION_HPP_
+#define MPC_ENLARGED_STATE__ANGLE_COST_FUNCTION_HPP_
 
-#include <nav2_social_mpc_controller/update_state.hpp>
+#include <mpc_enlarged_state/update_state.hpp>
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
@@ -44,7 +44,7 @@
  *
  * @return Always returns true to indicate a successful evaluation.
  */
-namespace nav2_social_mpc_controller
+namespace mpc_enlarged_state
 {
 
 class AngleCost
@@ -117,6 +117,6 @@ private:
   unsigned int block_length_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_enlarged_state
 
 #endif

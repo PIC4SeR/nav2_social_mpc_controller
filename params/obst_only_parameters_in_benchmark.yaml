@@ -102,7 +102,7 @@ controller_server:
       stateful: True
 
     FollowPath:
-      plugin: "nav2_social_mpc_controller::SocialMPCController"
+      plugin: "mpc_enlarged_state::MPCEnlargedState"
       trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__PEOPLE_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__PEOPLE_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__PEOPLE_HPP_
+#define MPC_SFM_MOTION_MODEL__PEOPLE_HPP_
 
 #include <mutex>
 
@@ -7,7 +7,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 class PeopleInterface
@@ -25,6 +25,6 @@ private:
   people_msgs::msg::People people_;
   std::mutex mutex_;
 };
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
 #endif

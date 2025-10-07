@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(nav2_social_mpc_controller)
+project(mpc_sfm_motion_model)
 
 set(CMAKE_BUILD_TYPE Release) # significant Ceres optimization speedup
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
@@ -52,7 +52,7 @@ set(dependencies
 
 set(library_name ${PROJECT_NAME})
 
-add_library(mpc_critics SHARED
+add_library(mpc_sfm_motion_model_critics SHARED
   src/critics/agent_angle_cost_function.cpp
   src/critics/angle_cost_function.cpp
   src/critics/curvature_cost_function.cpp
@@ -75,7 +75,7 @@ add_library(${library_name} SHARED
 )
 
 set(libraries 
-  mpc_critics
+  mpc_sfm_motion_model_critics
   ${library_name}
 )
 
@@ -85,11 +85,11 @@ foreach(lib IN LISTS libraries)
     ${dependencies})
 endforeach()
 
-target_link_libraries(${library_name} mpc_critics)
+target_link_libraries(${library_name} mpc_sfm_motion_model_critics)
 # prevent pluginlib from using boost
 target_compile_definitions(${library_name} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
-install(TARGETS ${library_name} mpc_critics
+install(TARGETS ${library_name} mpc_sfm_motion_model_critics
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -112,7 +112,7 @@ ament_export_libraries(${libraries})
 ament_export_dependencies(${dependencies})
 ament_export_definitions("PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
-pluginlib_export_plugin_description_file(nav2_core nav2_social_mpc_controller.xml)
+pluginlib_export_plugin_description_file(nav2_core mpc_sfm_motion_model.xml)
 
 ament_package()
 

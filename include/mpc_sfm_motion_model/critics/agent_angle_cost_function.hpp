@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__AGENT_ANGLE_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__AGENT_ANGLE_COST_FUNCTION_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__AGENT_ANGLE_COST_FUNCTION_HPP_
+#define MPC_SFM_MOTION_MODEL__AGENT_ANGLE_COST_FUNCTION_HPP_
 
-#include <nav2_social_mpc_controller/update_state.hpp>
+#include <mpc_sfm_motion_model/update_state.hpp>
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_sfm_motion_model/tools/type_definitions.hpp"
 
 /**
  * @file agent_angle_cost_function.hpp
@@ -44,7 +44,7 @@
  * @license Apache License, Version 2.0
  */
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 class AgentAngleCost
@@ -210,6 +210,6 @@ private:
   double safe_distance_squared_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
 #endif

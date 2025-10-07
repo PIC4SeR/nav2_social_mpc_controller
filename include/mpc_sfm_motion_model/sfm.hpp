@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__SFM_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__SFM_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__SFM_HPP_
+#define MPC_SFM_MOTION_MODEL__SFM_HPP_
 
 #include <cmath>
 #include <list>

@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__GOAL_ALIGN_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__GOAL_ALIGN_COST_FUNCTION_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__GOAL_ALIGN_COST_FUNCTION_HPP_
+#define MPC_SFM_MOTION_MODEL__GOAL_ALIGN_COST_FUNCTION_HPP_
 #include "Eigen/Core"
 #include "angles/angles.h"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
-#include "nav2_social_mpc_controller/update_state.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_sfm_motion_model/update_state.hpp"
+#include "mpc_sfm_motion_model/tools/type_definitions.hpp"
 
 /**
  * @brief Cost functor for aligning the robot's heading with a desired goal heading.
@@ -50,7 +50,7 @@
  * When used with Ceres, an instance of GoalAlignCost is wrapped in a ceres::AutoDiffCostFunction
  * and added as a residual block in the optimization problem.
  */
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 class GoalAlignCost
@@ -127,6 +127,6 @@ private:
   unsigned int block_length_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
 #endif

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__OPTIMIZER_HPP_
+#define MPC_SFM_MOTION_MODEL__OPTIMIZER_HPP_
 
 #include <math.h>
 #include <tf2/utils.h>
@@ -36,24 +36,24 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 // cost functions
-#include "nav2_social_mpc_controller/critics/agent_angle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/angle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/curvature_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/distance_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/goal_align_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/obstacle_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/velocity_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/velocity_feasibility_cost_function.hpp"
-#include "nav2_social_mpc_controller/critics/proxemics_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/agent_angle_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/angle_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/curvature_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/distance_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/goal_align_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/obstacle_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/social_work_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/velocity_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/velocity_feasibility_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/proxemics_cost_function.hpp"
 
-#include "nav2_social_mpc_controller/sfm.hpp"
-#include "nav2_social_mpc_controller/trajectory_memory.hpp"
+#include "mpc_sfm_motion_model/sfm.hpp"
+#include "mpc_sfm_motion_model/trajectory_memory.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
-#include "nav2_social_mpc_controller/tools/type_definitions.hpp"
+#include "mpc_sfm_motion_model/tools/type_definitions.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 struct OptimizerParams
@@ -141,7 +141,7 @@ public:
 
   /**
    * @brief Destrructor for
-   * nav2_social_mpc_controller::SocialMPCController
+   * mpc_sfm_motion_model::MPCSFMMotionModel
    */
   ~Optimizer();
 
@@ -243,6 +243,6 @@ private:
   rclcpp::Time path_time_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__OPTIMIZER_HPP_
+#endif  // MPC_SFM_MOTION_MODEL__OPTIMIZER_HPP_

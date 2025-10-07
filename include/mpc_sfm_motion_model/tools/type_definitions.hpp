@@ -1,5 +1,5 @@
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__TYPE_DEFINITIONS_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__TYPE_DEFINITIONS_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__TYPE_DEFINITIONS_HPP_
+#define MPC_SFM_MOTION_MODEL__TYPE_DEFINITIONS_HPP_
 
 #include <Eigen/Core>
 
@@ -8,4 +8,4 @@ typedef std::vector<AgentStatus> AgentsStates;         // vector of agent status
 typedef std::vector<AgentStatus> AgentTrajectory;      // vector of agent status (for a single agent trajectory)
 typedef std::vector<AgentsStates> AgentsTrajectories;  // vector of agent states (trajectories for all agents)
 
-#endif  // NAV2_SOCIAL_MPC_CONTROLLER__TYPE_DEFINITIONS_HPP_
+#endif  // MPC_SFM_MOTION_MODEL__TYPE_DEFINITIONS_HPP_

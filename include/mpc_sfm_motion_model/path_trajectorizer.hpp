@@ -32,7 +32,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 /**
@@ -160,6 +160,6 @@ protected:
   // double lookahead_time_;
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
 #endif  // NAV2_CONSTRAINED_SMOOTHER__CONSTRAINED_SMOOTHER_HPP_

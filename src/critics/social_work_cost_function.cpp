@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_social_mpc_controller/critics/social_work_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/social_work_cost_function.hpp"
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
@@ -43,4 +43,4 @@ SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
   sfm_forceFactorSocial_ = 2.1;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model

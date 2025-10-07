@@ -22,7 +22,7 @@ controller_server:
       stateful: True
 
     FollowPath:
-      plugin: "nav2_social_mpc_controller::SocialMPCController"
+      plugin: "mpc_sfm_motion_model::MPCSFMMotionModel"
       trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

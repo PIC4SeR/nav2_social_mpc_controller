@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef NAV2_SOCIAL_MPC_CONTROLLER__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
-#define NAV2_SOCIAL_MPC_CONTROLLER__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
+#ifndef MPC_SFM_MOTION_MODEL__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
+#define MPC_SFM_MOTION_MODEL__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
@@ -29,7 +29,7 @@
  */
 
 /// @brief Namespace for the social MPC controller.
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 /**
@@ -104,6 +104,6 @@ private:
   unsigned int current_position_;  ///< The current position index within the control horizon.
 };
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model
 
 #endif

@@ -20,7 +20,7 @@
 
 // #include "nav2_core/exceptions.hpp"
 // #include "nav2_costmap_2d/costmap_filters/filter_values.hpp"
-#include "nav2_social_mpc_controller/path_trajectorizer.hpp"
+#include "mpc_sfm_motion_model/path_trajectorizer.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
 #include "tf2/utils.h"
@@ -30,7 +30,7 @@ using nav2_util::declare_parameter_if_not_declared;
 // using nav2_util::geometry_utils::euclidean_distance;
 // using namespace nav2_costmap_2d; // NOLINT
 
-namespace nav2_social_mpc_controller
+namespace mpc_sfm_motion_model
 {
 
 PathTrajectorizer::PathTrajectorizer()
@@ -287,4 +287,4 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
   return true;
 }
 
-}  // namespace nav2_social_mpc_controller
+}  // namespace mpc_sfm_motion_model

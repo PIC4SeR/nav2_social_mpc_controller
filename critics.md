@@ -1,6 +1,6 @@
 # Critics Overview
 
-This document describes the custom critics used in the `nav2_social_mpc_controller` package. Critics are cost functions that guide the robot's behavior during navigation, ensuring safety, efficiency, and social compliance.
+This document describes the custom critics used in the `mpc_sfm_motion_model` package. Critics are cost functions that guide the robot's behavior during navigation, ensuring safety, efficiency, and social compliance.
 
 ---
 ## Optimization variables
@@ -86,11 +86,11 @@ Prevents the optimizer from computing drastically different velocity terms in su
 ---
 ## Example Configuration: `FollowPath`
 
-Below is an example YAML configuration for the `FollowPath` behavior using the `nav2_social_mpc_controller::SocialMPCController` plugin:
+Below is an example YAML configuration for the `FollowPath` behavior using the `mpc_sfm_motion_model::MPCSFMMotionModel` plugin:
 
 ```yaml
 FollowPath:
-    plugin: "nav2_social_mpc_controller::SocialMPCController"
+    plugin: "mpc_sfm_motion_model::MPCSFMMotionModel"
     trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__CURVATURE_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__CURVATURE_COST_FUNCTION_HPP_
+#ifndef MPC_BASE__CURVATURE_COST_FUNCTION_HPP_
+#define MPC_BASE__CURVATURE_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "glog/logging.h"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 class CurvatureCost
@@ -91,6 +91,6 @@ private:
   double max_angle_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

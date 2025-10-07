@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__PATH_HANDLER_HPP_
-#define MPC_ENLARGED_STATE__PATH_HANDLER_HPP_
+#ifndef MPC_BASE__PATH_HANDLER_HPP_
+#define MPC_BASE__PATH_HANDLER_HPP_
 
 #include <memory>
 
@@ -92,4 +92,4 @@ protected:
 
 }  // namespace mpc
 
-#endif  // MPC_ENLARGED_STATE__PATH_HANDLER_HPP_
+#endif  // MPC_BASE__PATH_HANDLER_HPP_

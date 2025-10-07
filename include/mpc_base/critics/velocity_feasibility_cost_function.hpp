@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
+#ifndef MPC_BASE__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
+#define MPC_BASE__VELOCITY_FEASIBILITY_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
@@ -29,7 +29,7 @@
  */
 
 /// @brief Namespace for the social MPC controller.
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 /**
@@ -104,6 +104,6 @@ private:
   unsigned int current_position_;  ///< The current position index within the control horizon.
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

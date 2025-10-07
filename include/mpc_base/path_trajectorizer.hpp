@@ -32,7 +32,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 /**
@@ -160,6 +160,6 @@ protected:
   // double lookahead_time_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif  // NAV2_CONSTRAINED_SMOOTHER__CONSTRAINED_SMOOTHER_HPP_

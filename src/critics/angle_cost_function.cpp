@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/angle_cost_function.hpp"
+#include "mpc_base/critics/angle_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 AngleCost::AngleCost(
@@ -31,4 +31,4 @@ AngleCost::AngleCost(
 {
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

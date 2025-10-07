@@ -1,6 +1,6 @@
-#include "mpc_enlarged_state/obstacle_distance_interface.hpp"
+#include "mpc_base/obstacle_distance_interface.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 // TODO:
@@ -153,4 +153,4 @@ bool ObstacleDistInterface::transformPose(const std::string frame, const geometr
   return false;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

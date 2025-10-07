@@ -64,7 +64,7 @@ controller_server:
       yaw_goal_tolerance: 0.25
       stateful: True
     FollowPath:
-      plugin: "mpc_enlarged_state::MPCEnlargedState"
+      plugin: "mpc_base::MPCBase"
       trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

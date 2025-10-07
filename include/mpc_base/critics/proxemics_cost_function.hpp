@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__PROXEMICS_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__PROXEMICS_COST_FUNCTION_HPP_
+#ifndef MPC_BASE__PROXEMICS_COST_FUNCTION_HPP_
+#define MPC_BASE__PROXEMICS_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "glog/logging.h"
-#include "mpc_enlarged_state/update_state.hpp"
-#include "mpc_enlarged_state/tools/type_definitions.hpp"
+#include "mpc_base/update_state.hpp"
+#include "mpc_base/tools/type_definitions.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 class ProxemicsCost
@@ -89,6 +89,9 @@ public:
 
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    //auto [new_position_x, new_position_y, new_position_orientation, agents] =
+    //    computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,
+    //                    block_length_);  // Update robot state
     robot(0, 0) = (T)new_position_x;                                                               // x
     robot(1, 0) = (T)new_position_y;                                                               // y
     robot(2, 0) = (T)new_position_orientation;                                                     // yaw
@@ -163,6 +166,6 @@ private:
   double alpha_;  // Scaling factor for the proxemics cost
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

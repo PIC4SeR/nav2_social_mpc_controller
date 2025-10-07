@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_
-#define MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_
+#ifndef MPC_BASE__MPC_CONTROLLER_HPP_
+#define MPC_BASE__MPC_CONTROLLER_HPP_
 
 #include <algorithm>
 #include <memory>
@@ -22,10 +22,10 @@
 
 #include "geometry_msgs/msg/pose2_d.hpp"
 #include "nav2_core/controller.hpp"
-#include "mpc_enlarged_state/obstacle_distance_interface.hpp"
-#include "mpc_enlarged_state/optimizer.hpp"
-#include "mpc_enlarged_state/path_trajectorizer.hpp"
-#include "mpc_enlarged_state/people_interface.hpp"
+#include "mpc_base/obstacle_distance_interface.hpp"
+#include "mpc_base/optimizer.hpp"
+#include "mpc_base/path_trajectorizer.hpp"
+#include "mpc_base/people_interface.hpp"
 #include "nav2_util/odometry_utils.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
@@ -35,30 +35,30 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/robot_utils.hpp"
-#include "mpc_enlarged_state/tools/path_handler.hpp"
-#include "mpc_enlarged_state/tools/type_definitions.hpp"
+#include "mpc_base/tools/path_handler.hpp"
+#include "mpc_base/tools/type_definitions.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 /**
- * @class mpc_enlarged_state::MPCEnlargedState
+ * @class mpc_base::MPCBase
  * @brief social mpc controller plugin
  */
-class MPCEnlargedState : public nav2_core::Controller
+class MPCBase : public nav2_core::Controller
 {
 public:
   /**
    * @brief Constructor for
-   * mpc_enlarged_state::MPCEnlargedState
+   * mpc_base::MPCBase
    */
-  MPCEnlargedState() = default;
+  MPCBase() = default;
 
   /**
    * @brief Destrructor for
-   * mpc_enlarged_state::MPCEnlargedState
+   * mpc_base::MPCBase
    */
-  ~MPCEnlargedState() override = default;
+  ~MPCBase() override = default;
 
   /**
    * @brief Configure controller state machine
@@ -153,7 +153,7 @@ protected:
   OptimizerParams optimizer_params_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D* costmap_;
-  rclcpp::Logger logger_{ rclcpp::get_logger("MPCEnlargedState") };
+  rclcpp::Logger logger_{ rclcpp::get_logger("MPCBase") };
 
   double speed_limit;
   bool percentage;
@@ -187,6 +187,6 @@ protected:
   std::unique_ptr<mpc::PathHandler> path_handler_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
-#endif  // MPC_ENLARGED_STATE__MPC_CONTROLLER_HPP_
+#endif  // MPC_BASE__MPC_CONTROLLER_HPP_

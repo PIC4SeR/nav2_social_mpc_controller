@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/velocity_cost_function.hpp"
-namespace mpc_enlarged_state
+#include "mpc_base/critics/velocity_cost_function.hpp"
+namespace mpc_base
 {
 
 VelocityCost::VelocityCost(
@@ -27,4 +27,4 @@ VelocityCost::VelocityCost(
 {
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

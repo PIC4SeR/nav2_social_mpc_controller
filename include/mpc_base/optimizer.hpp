@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__OPTIMIZER_HPP_
-#define MPC_ENLARGED_STATE__OPTIMIZER_HPP_
+#ifndef MPC_BASE__OPTIMIZER_HPP_
+#define MPC_BASE__OPTIMIZER_HPP_
 
 #include <math.h>
 #include <tf2/utils.h>
@@ -36,27 +36,24 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
 // cost functions
-#include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
-#include "mpc_enlarged_state/critics/angle_cost_function.hpp"
-#include "mpc_enlarged_state/critics/curvature_cost_function.hpp"
-#include "mpc_enlarged_state/critics/distance_cost_function.hpp"
-#include "mpc_enlarged_state/critics/goal_align_cost_function.hpp"
-#include "mpc_enlarged_state/critics/obstacle_cost_function.hpp"
-#include "mpc_enlarged_state/critics/social_work_cost_function.hpp"
-#include "mpc_enlarged_state/critics/overall_social_cost_function.hpp"
-#include "mpc_enlarged_state/critics/velocity_cost_function.hpp"
-#include "mpc_enlarged_state/critics/velocity_feasibility_cost_function.hpp"
-#include "mpc_enlarged_state/critics/proxemics_cost_function.hpp"
-#include "mpc_enlarged_state/update_state.hpp"
+#include "mpc_base/critics/agent_angle_cost_function.hpp"
+#include "mpc_base/critics/angle_cost_function.hpp"
+#include "mpc_base/critics/curvature_cost_function.hpp"
+#include "mpc_base/critics/distance_cost_function.hpp"
+#include "mpc_base/critics/goal_align_cost_function.hpp"
+#include "mpc_base/critics/obstacle_cost_function.hpp"
+#include "mpc_base/critics/social_work_cost_function.hpp"
+#include "mpc_base/critics/velocity_cost_function.hpp"
+#include "mpc_base/critics/velocity_feasibility_cost_function.hpp"
+#include "mpc_base/critics/proxemics_cost_function.hpp"
 
-#include "mpc_enlarged_state/sfm.hpp"
-#include "mpc_enlarged_state/trajectory_memory.hpp"
+#include "mpc_base/sfm.hpp"
+#include "mpc_base/trajectory_memory.hpp"
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
-#include "mpc_enlarged_state/tools/type_definitions.hpp"
-#include "mpc_enlarged_state/state_cache.hpp"
+#include "mpc_base/tools/type_definitions.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 struct OptimizerParams
@@ -127,36 +124,6 @@ public:
     double params[2];
   };
 
-  struct agent_velocity
-  {
-    double params[2];  
-  };
-
-  struct optimizing_velocities
-  {
-    double params[4];
-  };
-  struct dynamic_optimizing_velocities
-  {
-      std::vector<double> params;
-
-      // Optional: Constructor to initialize with a specific number of parameters
-      dynamic_optimizing_velocities(size_t num_params = 0) : params(num_params) {}
-
-      // Helper to add parameters (e.g., for each detected agent)
-      void add_agent_params() {
-          params.push_back(0.0); // Angular velocity
-          params.push_back(0.0); // Linear velocity
-      }
-
-      // Helper to resize based on the number of agents
-      void set_num_agents(int num_agents) {
-          // Base 2 parameters for the robot itself
-          // + 2 parameters for each agent
-          params.resize(2 + (num_agents * 2));
-          // You might want to initialize these new elements to a default value if not already done
-      }
-  };
   // t, yaw
   struct heading
   {
@@ -174,7 +141,7 @@ public:
 
   /**
    * @brief Destrructor for
-   * mpc_enlarged_state::MPCEnlargedState
+   * mpc_base::MPCBase
    */
   ~Optimizer();
 
@@ -238,23 +205,20 @@ private:
    * @param timestep Time step
    * @return Vector of vector of agent statuses
    */
-  AgentsTrajectories project_people(const AgentsStates& init_people
-                                   //     , const AgentTrajectory& robot_path,
-                                    //const obstacle_distance_msgs::msg::ObstacleDistance& od,
-                                   //  const float& maxtime,
-                                   // const float& timestep
+  AgentsTrajectories project_people(const AgentsStates& init_people,
+                                   const AgentTrajectory& robot_path,
+                                   // const obstacle_distance_msgs::msg::ObstacleDistance& od,
+                                    const float& maxtime,
+                                   const float& timestep
                                   );
-  /**
-   * @brief Project people positions for one step
-   * @param target_people Target people positions
-   * @param robot Robot status
-   * @param od Obstacle distances
-   * @param maxtime Maximum time horizon
-   * @param timestep Time step
-   * @return Vector of agent statuses
-   */
 
-  //Eigen::Vector2d computeObstacle(const Eigen::Vector2d& apos, const obstacle_distance_msgs::msg::ObstacleDistance& od);
+  /**
+   * @brief Compute obstacle position relative to agent
+   * @param apos Agent position
+   * @param od Obstacle distances
+   * @return Vector to obstacle
+   */
+  Eigen::Vector2d computeObstacle(const Eigen::Vector2d& apos, const obstacle_distance_msgs::msg::ObstacleDistance& od);
 
   bool debug_;
   unsigned int control_horizon_;
@@ -280,6 +244,6 @@ private:
   rclcpp::Time path_time_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
-#endif  // MPC_ENLARGED_STATE__OPTIMIZER_HPP_
+#endif  // MPC_BASE__OPTIMIZER_HPP_

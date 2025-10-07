@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/distance_cost_function.hpp"
-namespace mpc_enlarged_state
+#include "mpc_base/critics/distance_cost_function.hpp"
+namespace mpc_base
 {
 
 DistanceCost::DistanceCost(
@@ -29,4 +29,4 @@ DistanceCost::DistanceCost(
   control_horizon_ = control_horizon;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__SFM_HPP_
-#define MPC_ENLARGED_STATE__SFM_HPP_
+#ifndef MPC_BASE__SFM_HPP_
+#define MPC_BASE__SFM_HPP_
 
 #include <cmath>
 #include <list>

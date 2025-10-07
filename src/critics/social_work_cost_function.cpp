@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/social_work_cost_function.hpp"
+#include "mpc_base/critics/social_work_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
@@ -43,4 +43,4 @@ SocialWorkCost::SocialWorkCost(double weight, const AgentsStates& agents_init,
   sfm_forceFactorSocial_ = 2.1;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

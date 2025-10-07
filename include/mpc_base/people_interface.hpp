@@ -1,5 +1,5 @@
-#ifndef MPC_ENLARGED_STATE__PEOPLE_HPP_
-#define MPC_ENLARGED_STATE__PEOPLE_HPP_
+#ifndef MPC_BASE__PEOPLE_HPP_
+#define MPC_BASE__PEOPLE_HPP_
 
 #include <mutex>
 
@@ -7,7 +7,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 class PeopleInterface
@@ -25,6 +25,6 @@ private:
   people_msgs::msg::People people_;
   std::mutex mutex_;
 };
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__SOCIAL_WORK_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__SOCIAL_WORK_FUNCTION_HPP_
+#ifndef MPC_BASE__SOCIAL_WORK_FUNCTION_HPP_
+#define MPC_BASE__SOCIAL_WORK_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "glog/logging.h"
-#include "mpc_enlarged_state/update_state.hpp"
-#include "mpc_enlarged_state/tools/type_definitions.hpp"
+#include "mpc_base/update_state.hpp"
+#include "mpc_base/tools/type_definitions.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 template <typename T>
@@ -107,6 +107,9 @@ public:
     Eigen::Matrix<T, 6, 1> robot;
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    //auto [new_position_x, new_position_y, new_position_orientation,agents] =
+    //    computeSFMState(robot_init_,agents_, parameters, time_step_, current_position_, control_horizon_,
+    //                             block_length_);  // Update robot state
     robot(0, 0) = (T)new_position_x;                                                               // x
     robot(1, 0) = (T)new_position_y;                                                               // y
     robot(2, 0) = (T)new_position_orientation;                                                     // yaw
@@ -134,10 +137,10 @@ public:
 
     robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the second column to an invalid state
     robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
-    for (unsigned int i = 0; i < original_agents_.cols(); i++)              // Iterate through each agent
+    for (unsigned int i = 0; i < agents.cols(); i++)              // Iterate through each agent
     {
       Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
-      ag.col(0) << original_agents_.col(i).template cast<T>();  // Set the current state of the agent
+      ag.col(0) << agents.col(i);  // Set the current state of the agent
       Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
       wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
     }
@@ -145,9 +148,6 @@ public:
 
     // sum the social works and multiply by the weight
     residual[0] = (T)weight_ * (total_social_force_magnitude_sq);
-    RCLCPP_DEBUG_STREAM(rclcpp::get_logger("SocialWorkCost"),
-        "Social work cost: " << residual[0] << " (wr: " << wr << ", wp: " << wp
-                             << ", total: " << total_social_force_magnitude_sq << ")");
 
     return true;
   }
@@ -205,7 +205,7 @@ public:
 
       T B = (T)sfm_gamma_ *
             interactionLength;  // Calculate the social force parameter B based on the interaction length and gamma
-      T forceVelocityAmount = (T)ceres::exp(
+      T forceVelocityAmount = -(T)ceres::exp(
           -(T)diff.norm() / B -
           ((T)sfm_nPrime_ * B * theta) * ((T)sfm_nPrime_ * B * theta));  // Calculate the force velocity amount based on
                                                                          // the difference in position and the angle
@@ -213,7 +213,7 @@ public:
       T sign = (theta > (T)0) ? (T)1 : (T)-1;  // Determine the sign of theta
 
       T forceAngleAmount =
-          sign * ceres::exp(-(T)diff.norm() / B -
+          -sign * ceres::exp(-(T)diff.norm() / B -
                              ((T)sfm_n_ * B * theta) *
                                  ((T)sfm_n_ * B * theta));  // Calculate the force angle amount based on the difference
                                                             // in position, the angle, and the sign of the initial angle
@@ -247,6 +247,6 @@ private:
   double sfm_forceFactorSocial_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

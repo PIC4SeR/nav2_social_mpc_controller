@@ -1,6 +1,6 @@
 # Critics Overview
 
-This document describes the custom critics used in the `mpc_enlarged_state` package. Critics are cost functions that guide the robot's behavior during navigation, ensuring safety, efficiency, and social compliance.
+This document describes the custom critics used in the `mpc_base` package. Critics are cost functions that guide the robot's behavior during navigation, ensuring safety, efficiency, and social compliance.
 
 ---
 ## Optimization variables
@@ -71,11 +71,6 @@ Uses the Social Force Model (SFM) to consider social work as a cost, aiming to m
 
 ---
 
-## Proxemics Cost Function
-
-**Purpose:**
-Consideres the distance with neighboring agents as a cost, aiming to maximize it.
-
 ## Velocity Cost Function
 
 **Purpose:**  
@@ -91,11 +86,11 @@ Prevents the optimizer from computing drastically different velocity terms in su
 ---
 ## Example Configuration: `FollowPath`
 
-Below is an example YAML configuration for the `FollowPath` behavior using the `mpc_enlarged_state::MPCEnlargedState` plugin:
+Below is an example YAML configuration for the `FollowPath` behavior using the `mpc_base::MPCBase` plugin:
 
 ```yaml
 FollowPath:
-    plugin: "mpc_enlarged_state::MPCEnlargedState"
+    plugin: "mpc_base::MPCBase"
     trajectorizer:
         omnidirectional: false
         desired_linear_vel: 0.6

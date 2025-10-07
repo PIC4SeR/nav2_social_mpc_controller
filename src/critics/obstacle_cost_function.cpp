@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/obstacle_cost_function.hpp"
-namespace mpc_enlarged_state
+#include "mpc_base/critics/obstacle_cost_function.hpp"
+namespace mpc_base
 {
 
 ObstacleCost::ObstacleCost(
@@ -33,4 +33,4 @@ ObstacleCost::ObstacleCost(
   block_length_ = block_length;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

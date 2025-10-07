@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__OBSTACLE_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__OBSTACLE_COST_FUNCTION_HPP_
+#ifndef MPC_BASE__OBSTACLE_COST_FUNCTION_HPP_
+#define MPC_BASE__OBSTACLE_COST_FUNCTION_HPP_
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
@@ -21,7 +21,7 @@
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
 #include "nav2_costmap_2d/costmap_2d.hpp"
-#include "mpc_enlarged_state/update_state.hpp"
+#include "mpc_base/update_state.hpp"
 
 /**
  * @brief Functor for computing the obstacle cost residual for a given robot state.
@@ -54,7 +54,7 @@
  *
  * Usage Example:
  * @code
- *   mpc_enlarged_state::ObstacleCost cost_function(
+ *   mpc_base::ObstacleCost cost_function(
  *       weight, costmap, costmap_interpolator, robot_init, current_position,
  *       time_step, control_horizon, block_length);
  *
@@ -63,7 +63,7 @@
  *   cost_function(parameters, &residual);
  * @endcode
  */
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 class ObstacleCost
@@ -177,6 +177,6 @@ public:
   std::shared_ptr<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>> costmap_interpolator_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

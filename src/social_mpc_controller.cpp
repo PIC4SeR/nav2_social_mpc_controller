@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/social_mpc_controller.hpp"
+#include "mpc_base/social_mpc_controller.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -42,10 +42,10 @@ double clamp(double value, double min, double max)
   return value;
 }
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
-void MPCEnlargedState::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent, std::string name,
+void MPCBase::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr& parent, std::string name,
                                     std::shared_ptr<tf2_ros::Buffer> tf,
                                     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
@@ -85,39 +85,39 @@ void MPCEnlargedState::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr&
   people_traj_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>("people_projected_trajectory", 1);
 }
 
-void MPCEnlargedState::cleanup()
+void MPCBase::cleanup()
 {
   RCLCPP_INFO(logger_,
               "Cleaning up controller: %s of type"
-              "mpc_enlarged_state::MPCEnlargedState",
+              "mpc_base::MPCBase",
               plugin_name_.c_str());
   local_path_pub_.reset();
   people_traj_pub_.reset();
 }
 
-void MPCEnlargedState::activate()
+void MPCBase::activate()
 {
   RCLCPP_INFO(logger_,
               "Activating controller: %s of type "
-              "mpc_enlarged_state::MPCEnlargedState",
+              "mpc_base::MPCBase",
               plugin_name_.c_str());
   trajectorizer_->activate();
   local_path_pub_->on_activate();
   people_traj_pub_->on_activate();
 }
 
-void MPCEnlargedState::deactivate()
+void MPCBase::deactivate()
 {
   RCLCPP_INFO(logger_,
               "Deactivating controller: %s of type "
-              "mpc_enlarged_state::MPCEnlargedState",
+              "mpc_base::MPCBase",
               plugin_name_.c_str());
   trajectorizer_->deactivate();
   local_path_pub_->on_deactivate();
   people_traj_pub_->on_deactivate();
 }
 
-void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
+void MPCBase::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
 {
   // Create one marker for each person
   size_t npeople = people[0].size();
@@ -131,7 +131,7 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
       m.type = m.LINE_STRIP;
       m.id = idx;
       m.action = m.ADD;
-      m.scale.x = 0.05;
+      m.scale.x = 0.5;
       m.color.a = 1.0;
       m.color.r = 1.0;
       m.color.g = 0.0;
@@ -159,7 +159,7 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
   people_traj_pub_->publish(ma);
 }
 
-geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
+geometry_msgs::msg::TwistStamped MPCBase::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::Twist& speed,
     nav2_core::GoalChecker* goal_checker)
 {
@@ -180,27 +180,11 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
   {
     geometry_msgs::msg::TwistStamped cmd_vel;
-    // Fallback: align with the goal and move forward if possible
     cmd_vel.header = robot_pose.header;
-
-    // Compute angle to goal
-    double dx = goal.point.x - robot_pose.pose.position.x;
-    double dy = goal.point.y - robot_pose.pose.position.y;
-    double angle_to_goal = std::atan2(dy, dx);
-    double robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
-    double angle_diff = angles::shortest_angular_distance(robot_yaw, angle_to_goal);
-
-    // If not aligned, rotate in place
-    if (std::fabs(angle_diff) > 0.1) {
-      cmd_vel.twist.linear.x = 0.0;
-      cmd_vel.twist.angular.z = clamp(angle_diff/0.05, -0.8, 0.8);
-      RCLCPP_WARN(logger_, "Fallback: rotating to align with goal (angle diff: %f)", angle_diff);
-    } else {
-      // Aligned: move forward slowly
-      cmd_vel.twist.linear.x = 0.2;
-      cmd_vel.twist.angular.z = 0.0;
-      RCLCPP_WARN(logger_, "Fallback: moving towards goal");
-    }
+    cmd_vel.twist.linear.x = 0.1;  // Use the desired speed as a fallback
+    cmd_vel.twist.linear.y = 0.0;
+    cmd_vel.twist.angular.z = 0.0;  // No angular velocity
+    RCLCPP_WARN(logger_, "Approaching goal without a valid trajectory, using fallback cmd_vel");
     return cmd_vel;
   }
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
@@ -253,9 +237,9 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
 
-  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_, 
-    //transformed_od,
-     cmds, people, speed, ts);
+  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,
+                                        //transformed_od,
+                                        cmds, people, speed, ts);
   if (!optimized)
   {
     RCLCPP_WARN(logger_, "Optimization failed, using initial commands");
@@ -267,19 +251,19 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = cmds[0].header;
-  cmd_vel.twist.linear.x = (std::abs(cmds[0].twist.linear.x) < 0.6) ? cmds[0].twist.linear.x : 0.6;
+  cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
   cmd_vel.twist.linear.y = 0;
-  cmd_vel.twist.angular.z = (std::abs(cmds[0].twist.angular.z) < 1.5) ? cmds[0].twist.angular.z : 1.5;
+  cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
   RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
   return cmd_vel;
 }
 
-void MPCEnlargedState::setPlan(const nav_msgs::msg::Path& path)
+void MPCBase::setPlan(const nav_msgs::msg::Path& path)
 {
   path_handler_->setPlan(path);
 }
 
-void MPCEnlargedState::setSpeedLimit(const double& speed_limit, const bool& percentage)
+void MPCBase::setSpeedLimit(const double& speed_limit, const bool& percentage)
 {
   double speed_limit_ = speed_limit;
   bool percentage_ = percentage;
@@ -300,7 +284,7 @@ void MPCEnlargedState::setSpeedLimit(const double& speed_limit, const bool& perc
   }
 }
 
-bool MPCEnlargedState::transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,
+bool MPCBase::transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,
                                         geometry_msgs::msg::PoseStamped& out_pose) const
 {
   if (in_pose.header.frame_id == frame)
@@ -322,7 +306,7 @@ bool MPCEnlargedState::transformPose(const std::string frame, const geometry_msg
   return false;
 }
 
-bool MPCEnlargedState::transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
+bool MPCBase::transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
                                          geometry_msgs::msg::PointStamped& out_point) const
 {
   try
@@ -337,7 +321,7 @@ bool MPCEnlargedState::transformPoint(const std::string frame, const geometry_ms
   return false;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 // Register this controller as a nav2_core plugin
-PLUGINLIB_EXPORT_CLASS(mpc_enlarged_state::MPCEnlargedState, nav2_core::Controller)
+PLUGINLIB_EXPORT_CLASS(mpc_base::MPCBase, nav2_core::Controller)

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/curvature_cost_function.hpp"
+#include "mpc_base/critics/curvature_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 CurvatureCost::CurvatureCost(double weight, double max_angle) : weight_(weight), max_angle_(max_angle)
 {
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

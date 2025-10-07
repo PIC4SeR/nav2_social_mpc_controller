@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
+#include "mpc_base/critics/agent_angle_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
@@ -28,7 +28,12 @@ AgentAngleCost::AgentAngleCost(double weight, const AgentsStates& agents_init,
   , control_horizon_(control_horizon)
   , block_length_(block_length)
 {
+  for (unsigned int j = 0; j < agents_init.size(); j++)
+  {
+    original_agents_.col(j) << agents_init[j][0], agents_init[j][1], agents_init[j][2], agents_init[j][3],
+        agents_init[j][4], agents_init[j][5];
+  }
   safe_distance_squared_ = 4.0;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

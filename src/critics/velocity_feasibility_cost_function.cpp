@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/velocity_feasibility_cost_function.hpp"
+#include "mpc_base/critics/velocity_feasibility_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 VelocityFeasibilityCost::VelocityFeasibilityCost(
@@ -25,4 +25,4 @@ VelocityFeasibilityCost::VelocityFeasibilityCost(
   current_position_ = current_position;
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

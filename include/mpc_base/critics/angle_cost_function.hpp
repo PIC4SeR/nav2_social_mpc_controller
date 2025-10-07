@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__ANGLE_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__ANGLE_COST_FUNCTION_HPP_
+#ifndef MPC_BASE__ANGLE_COST_FUNCTION_HPP_
+#define MPC_BASE__ANGLE_COST_FUNCTION_HPP_
 
-#include <mpc_enlarged_state/update_state.hpp>
+#include <mpc_base/update_state.hpp>
 
 #include "Eigen/Core"
 #include "ceres/ceres.h"
@@ -44,7 +44,7 @@
  *
  * @return Always returns true to indicate a successful evaluation.
  */
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 class AngleCost
@@ -117,6 +117,6 @@ private:
   unsigned int block_length_;
 };
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base
 
 #endif

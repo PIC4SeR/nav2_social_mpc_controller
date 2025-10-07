@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mpc_enlarged_state/critics/proxemics_cost_function.hpp"
+#include "mpc_base/critics/proxemics_cost_function.hpp"
 
-namespace mpc_enlarged_state
+namespace mpc_base
 {
 
 ProxemicsCost::ProxemicsCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
@@ -38,4 +38,4 @@ ProxemicsCost::ProxemicsCost(double weight, const AgentsStates& agents_init, con
   d0_ = 0.5;     // Minimum distance for proxemics cost
 }
 
-}  // namespace mpc_enlarged_state
+}  // namespace mpc_base

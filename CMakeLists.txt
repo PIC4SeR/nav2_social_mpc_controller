@@ -90,7 +90,7 @@ target_link_libraries(${library_name} mpc_enlarged_state_critics)
 # prevent pluginlib from using boost
 target_compile_definitions(${library_name} PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
-install(TARGETS ${library_name} mpc_enlarged_statecritics
+install(TARGETS ${library_name} mpc_enlarged_state_critics
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin

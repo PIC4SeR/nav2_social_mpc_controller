@@ -216,6 +216,19 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   }
   long unsigned int num_agents = people.people.size();
 
+  AgentsStates fallback_agents;
+  if (num_agents > 0)
+  {
+    fallback_agents.resize(num_agents);
+    for (unsigned int k = 0; k < num_agents; ++k)
+    {
+      fallback_agents[k] = AgentStatus::Zero();
+      fallback_agents[k][3] = -1.0;  // mark as invalid by default
+    }
+  }
+
+  const AgentsStates& people_states_for_cost = (!people_proj.empty() ? people_proj.front() : fallback_agents);
+
   std::vector<dynamic_optimizing_velocities> variables_to_optimize;
   for (unsigned int j= 0; j < optim_status.size(); ++j)
   {
@@ -225,8 +238,11 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     doa.params[1] = optim_status[j][5];
      // fill the 2 coordinates for each of the num_agents
     for (unsigned int k = 0; k < num_agents; ++k) {
-      doa.params[2 + 2*k]     = people_proj[0][k][4]*ceres::cos(people_proj[0][k][2]);  // velocity x of agent k
-      doa.params[2 + 2*k + 1] = people_proj[0][k][4]*ceres::sin(people_proj[0][k][2]);  // velocity y of agent k
+      const auto& agent_state = (people_proj.empty() || people_proj[0].size() <= k)
+                                    ? fallback_agents[k]
+                                    : people_proj[0][k];
+      doa.params[2 + 2*k]     = agent_state[4]*ceres::cos(agent_state[2]);  // velocity x of agent k
+      doa.params[2 + 2*k + 1] = agent_state[4]*ceres::sin(agent_state[2]);  // velocity y of agent k
     }
     //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "Dynamic optimizing velocities size: %ld",
     //         doa.params.size());
@@ -384,7 +400,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     }
     Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
     auto* overall_social_cost_function_f =
-        SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_proj[0], num_agents, evolving_poses[0].pose,
+  SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_states_for_cost, num_agents, evolving_poses[0].pose,
                                            i, time_step, control_horizon, block_length,found_people, true, true, true, true, true);
     //auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[i + 1], evolving_poses[0].pose,
     //                                                      counter_step, i, time_step, control_horizon, block_length);
@@ -509,7 +525,10 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 1, -1.4);  // lower bound for angular velocity
     problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 1, 1.4);   // upper bound for angular velocity
     for (unsigned int j = 0; j < num_agents; j++) {
-      if (people_proj[0][j][4] < 0.01) {
+      const auto& agent_state = (people_proj.empty() || people_proj[0].size() <= j)
+                                    ? fallback_agents[j]
+                                    : people_proj[0][j];
+      if (agent_state[4] < 0.01) {
         RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"), "Agent " << j << " has a velocity of 0, setting bounds to 0");
         problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 2 + 2*j, -0.1);   // lower bound for agent j linear velocity
         problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 2 + 2*j, 0.1);   // upper bound for agent j linear velocity

@@ -119,6 +119,15 @@ void MPCEnlargedState::deactivate()
 
 void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
 {
+  if (people.empty())
+  {
+    return;
+  }
+  // Ensure at least one agent list exists before indexing
+  if (people[0].empty())
+  {
+    return;
+  }
   // Create one marker for each person
   size_t npeople = people[0].size();
   visualization_msgs::msg::MarkerArray ma;
@@ -143,10 +152,19 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
   for (unsigned int stepi = 0; stepi < people.size(); stepi++)
   {
     int mi = 0;
+    if (people[stepi].empty())
+    {
+      continue;
+    }
     for (unsigned int personi = 0; personi < people[stepi].size(); personi++)
     {
       if (people[stepi][personi][3] != -1.0)
       {
+        if (mi >= static_cast<int>(ma.markers.size()))
+        {
+          // No pre-created marker for this index; skip to avoid out-of-range access
+          continue;
+        }
         geometry_msgs::msg::Point point;
         point.x = people[stepi][personi][0];
         point.y = people[stepi][personi][1];

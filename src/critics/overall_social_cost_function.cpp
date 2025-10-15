@@ -22,7 +22,7 @@ SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, dou
                   const Eigen::Matrix<double, 2, 1> point,
                  const AgentsStates& agents_init, long unsigned int agent_index, const geometry_msgs::msg::Pose& robot_init,
                   unsigned int current_position, double time_step, unsigned int control_horizon,
-                 unsigned int block_length, bool found_people, bool use_work_cost, bool use_angle_cost, bool use_proxemics_cost,
+                 unsigned int block_length, bool found_people, bool use_social_work_cost, bool use_angle_cost, bool use_proxemics_cost,
                 bool use_path_follow_cost, bool use_path_align_cost)
   : work_weight_(work_weight)
   , angle_weight_(angle_weight)
@@ -39,7 +39,7 @@ SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, dou
   , control_horizon_(control_horizon)
   , block_length_(block_length)
   , found_people_(found_people)
-  , use_work_cost_(use_work_cost)
+  , use_social_work_cost_(use_social_work_cost)
   , use_angle_cost_(use_angle_cost)
   , use_proxemics_cost_(use_proxemics_cost)
   , use_path_follow_cost_(use_path_follow_cost)

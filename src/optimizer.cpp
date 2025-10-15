@@ -24,6 +24,7 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   std::string trajectorizer = name + std::string(".trajectorizer.");
   std::string local_name = name + std::string(".optimizer.");
   std::string weights = local_name + std::string("weights.");
+  std::string overall_cost = local_name + std::string("overall_cost.");
 
   // Optimizer params
   nav2_util::declare_parameter_if_not_declared(
@@ -76,6 +77,16 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(weights + "obstacle_weight", obstacle_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "goal_align_weight", rclcpp::ParameterValue(0.0));
   node->get_parameter(weights + "goal_align_weight", goal_align_w_);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_social_work", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_social_work", use_social_work_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_angle", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_angle", use_social_angle_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_proxemics", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_proxemics", use_social_proxemics_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_path_follow", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_path_follow", use_social_path_follow_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_path_align", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_path_align", use_social_path_align_cost);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "control_horizon", rclcpp::ParameterValue(5));
   node->get_parameter(local_name + "control_horizon", control_horizon_);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "parameter_block_length", rclcpp::ParameterValue(5));
@@ -115,6 +126,11 @@ void Optimizer::initialize(const OptimizerParams params)
   angle_w_ = params.angle_w_;
   agent_angle_w_ = params.agent_angle_w_;
   proxemics_w_ = params.proxemics_w_;
+  use_social_work_cost_ = params.use_social_work_cost;
+  use_social_angle_cost_ = params.use_social_angle_cost;
+  use_social_proxemics_cost_ = params.use_social_proxemics_cost;
+  use_social_path_follow_cost_ = params.use_social_path_follow_cost;
+  use_social_path_align_cost_ = params.use_social_path_align_cost;
   control_horizon_ = params.control_horizon_;
   parameter_block_length_ = params.parameter_block_length_;
   max_time = params.max_time;
@@ -351,7 +367,9 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
     auto* overall_social_cost_function_f =
   SocialOverallCost::Create(socialwork_w_, agent_angle_w_, proxemics_w_,distance_w_, angle_w_, final_trajectorized_point, point, people_states_for_cost, num_agents, evolving_poses[0].pose,
-                                           i, time_step, control_horizon, block_length,found_people, true, true, true, true, true);
+                                           i, time_step, control_horizon, block_length,found_people, use_social_work_cost_,
+                                           use_social_angle_cost_, use_social_proxemics_cost_, use_social_path_follow_cost_,
+                                           use_social_path_align_cost_);
     unsigned int b = 2 + 2*(unsigned int)num_agents;
     if (i < control_horizon)
     {

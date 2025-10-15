@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "mpc_enlarged_state/critics/goal_align_cost_function.hpp"
-#include "mpc_enlarged_state/state_cache.hpp"
 #include "mpc_enlarged_state/tools/type_definitions.hpp"
 
 

@@ -92,6 +92,11 @@ struct OptimizerParams
   double goal_align_w_;
   double obstacle_w_;
   double proxemics_w_;
+  bool use_social_work_cost;
+  bool use_social_angle_cost;
+  bool use_social_proxemics_cost;
+  bool use_social_path_follow_cost;
+  bool use_social_path_align_cost;
   float current_path_w;
   float current_cmds_w;
   float max_time;
@@ -254,6 +259,11 @@ private:
   double curvature_w_;
   double proxemics_w_;
   double curvature_angle_min_;
+  bool use_social_work_cost_{true};
+  bool use_social_angle_cost_{true};
+  bool use_social_proxemics_cost_{true};
+  bool use_social_path_follow_cost_{true};
+  bool use_social_path_align_cost_{true};
   float current_path_w;
   float current_cmds_w;
   ceres::Solver::Options options_;

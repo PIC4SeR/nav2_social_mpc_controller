@@ -66,7 +66,7 @@ public:
                 const Eigen::Matrix<double,2,1> point,
                 const AgentsStates& agents_init, long unsigned int agent_index, const geometry_msgs::msg::Pose& robot_init,
                   unsigned int current_position, double time_step, unsigned int control_horizon,
-                 unsigned int block_length, bool found_people, bool use_work_cost, bool use_angle_cost, 
+                 unsigned int block_length, bool found_people, bool use_social_work_cost, bool use_angle_cost, 
                  bool use_proxemics_cost, bool use_path_follow_cost, bool use_path_align_cost);
 
   /**
@@ -92,14 +92,14 @@ public:
                 const Eigen::Matrix<double, 2, 1> point,
                  const AgentsStates& agents_init, long unsigned int agent_index, const geometry_msgs::msg::Pose& robot_init,
                  unsigned int current_position, double time_step, unsigned int control_horizon,
-                 unsigned int block_length, bool found_people, bool use_work_cost, bool use_angle_cost, bool use_proxemics_cost,
+                 unsigned int block_length, bool found_people, bool use_social_work_cost, bool use_angle_cost, bool use_proxemics_cost,
                 bool use_path_follow_cost, bool use_path_align_cost)
   {
     return new SocialOverallCostFunction(new SocialOverallCost(work_weight, angle_weight, proxemics_weight, 
                                                           path_follow_weight, path_align_weight, final_point,
                                                           point,
                                                           agents_init, agent_index,robot_init, current_position,
-                                                         time_step, control_horizon, block_length, found_people, use_work_cost, 
+                                                         time_step, control_horizon, block_length, found_people, use_social_work_cost, 
                                                          use_angle_cost, use_proxemics_cost,
                                                         use_path_follow_cost, use_path_align_cost));
   }
@@ -172,7 +172,7 @@ public:
     residuals[3] = (T)0.0;  // Initialize residual to zero for path following
     residuals[4] = (T)0.0;  // Initialize residual to zero for path alignment
 
-  if (use_work_cost_ == true && found_people_ == true) {
+  if (use_social_work_cost_ == true && found_people_ == true) {
     residuals[0] += usingSocialWork(robot, agents);  // Update robot state
     } 
     if (use_angle_cost_ == true && found_people_ == true) {
@@ -434,7 +434,7 @@ private:
   double alpha_;
   double safe_distance_squared_;
   bool found_people_;
-  bool use_work_cost_;
+  bool use_social_work_cost_;
   bool use_angle_cost_;
   bool use_proxemics_cost_;
   bool use_path_follow_cost_;

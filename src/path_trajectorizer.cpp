@@ -18,8 +18,6 @@
 #include <utility>
 #include <vector>
 
-// #include "nav2_core/exceptions.hpp"
-// #include "nav2_costmap_2d/costmap_filters/filter_values.hpp"
 #include "mpc_enlarged_state/path_trajectorizer.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
@@ -27,8 +25,6 @@
 #include "angles/angles.h"
 
 using nav2_util::declare_parameter_if_not_declared;
-// using nav2_util::geometry_utils::euclidean_distance;
-// using namespace nav2_costmap_2d; // NOLINT
 
 namespace mpc_enlarged_state
 {
@@ -201,10 +197,6 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
         curvature = 2.0 * dy / point_dist2;
       }
       // Setting the velocity direction
-      // double sign = 1.0;
-      // if (allow_reversing_) {
-      //   sign = dx >= 0.0 ? 1.0 : -1.0;
-      // }
       vx = desired_linear_vel_;
 
       // Make sure we're in compliance with basic constraints
@@ -223,22 +215,6 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
         wz = vx * curvature;
       }
 
-      // if (dx > 0)
-      // {
-      //   vx = desired_linear_vel_ * (0.1 + exp(-fabs(dtheta)));  // desired_linear_vel_;
-      //   if (vx > desired_linear_vel_)
-      //     vx = desired_linear_vel_;
-      //   // wz = max_angular_vel_ * dtheta;
-      //   auto curvature = 2.0 * dy / (dx * dx + dy * dy);
-      //   wz = desired_linear_vel_ * curvature;
-      // }
-      // else
-      // {
-      //   vx = 0.0;
-      //   wz = max_angular_vel_;
-      //   if (dtheta < 0.0)
-      //     wz = -max_angular_vel_;
-      // }
     }
 
     // --- 3 ---

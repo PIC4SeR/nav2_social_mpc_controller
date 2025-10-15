@@ -45,11 +45,12 @@ SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, dou
   , use_path_follow_cost_(use_path_follow_cost)
   , use_path_align_cost_(use_path_align_cost)  // Default value, can be set later if needed
 {
-  for (unsigned int j = 0; j < agents_init.size(); j++)
+  original_agents_.resize(6, agents_init.size());
+  for (size_t j = 0; j < agents_init.size(); j++)
   {
-    original_agents_.col(j) << agents_init[j][0], agents_init[j][1], agents_init[j][2], agents_init[j][3],
-        agents_init[j][4], agents_init[j][5];
+    original_agents_.col(j) = agents_init[j];
   }
+  agents_init_ = agents_init;
 
   sfm_lambda_ = 2.0;
   sfm_gamma_ = 0.35;

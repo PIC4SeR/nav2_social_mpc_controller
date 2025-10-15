@@ -15,6 +15,8 @@
 #ifndef MPC_ENLARGED_STATE__OVERALL_SOCIAL_COST_FUNCTION_HPP_
 #define MPC_ENLARGED_STATE__OVERALL_SOCIAL_COST_FUNCTION_HPP_
 
+#include <algorithm>
+#include <limits>
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
@@ -116,10 +118,8 @@ public:
   bool operator()(T const* const* parameters, T* residuals) const
   {
     // Compute robot social work
-    Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
+    Eigen::Matrix<T, 6, Eigen::Dynamic> agents = original_agents_.template cast<T>();
     Eigen::Matrix<T, 6, 1> robot;
-    //auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-    //    robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
     auto [new_position_x, new_position_y, new_position_orientation, agent_x, agent_y, agent_theta] = computeAgentandRobotState(
         robot_init_, agents_init_, parameters, agent_index_, time_step_, current_position_, control_horizon_, block_length_);
     robot(0, 0) = (T)new_position_x;                                                               // x
@@ -136,18 +136,21 @@ public:
       robot(4, 0) = parameters[(control_horizon_ - 1) / block_length_][0];  // lv
       robot(5, 0) = parameters[(control_horizon_ - 1) / block_length_][1];  // av
     }
-    for (unsigned int k = 0; k < agent_index_; ++k) {
+  const size_t total_agents = static_cast<size_t>(agents.cols());
+  const size_t capped_agents = std::min(static_cast<size_t>(agent_index_), total_agents);
+    for (size_t k = 0; k < capped_agents; ++k) {
+      const Eigen::Index agent_col = static_cast<Eigen::Index>(k);
     // Skip agents you’ve marked invalid
-      if (agents(3, k) == (T)-1.0)
+      if (agents(3, agent_col) == (T)-1.0)
           continue;
 
       // Overwrite the agent’s pose
-      agents(0, k) = agent_x[k];
-      agents(1, k) = agent_y[k];
-      agents(2, k) = agent_theta[k];
+      agents(0, agent_col) = agent_x[k]; // agent_x
+      agents(1, agent_col) = agent_y[k];  // agent_y
+      agents(2, agent_col) = agent_theta[k];  // agent_theta
 
       // Mark “last updated at” with your time step
-      agents(3, k) = (T)current_position_ * time_step_;
+      agents(3, agent_col) = (T)current_position_ * time_step_; // agent_t
 
       // Figure out which parameter block to use
       unsigned block_idx;
@@ -156,14 +159,12 @@ public:
       } else {
         block_idx = (control_horizon_ - 1) / block_length_;
       }
-//
-      //// Each agent has 2 params starting at offset 2: [speed, omega]
-      unsigned param_offset = 2 + 2*k;
-      // parameters[block_idx][param_offset] = vx, parameters[block_idx][param_offset + 1] = vy
+
+      unsigned param_offset = 2 + static_cast<unsigned>(2 * k);
       T vx = parameters[block_idx][param_offset];
       T vy = parameters[block_idx][param_offset + 1];
-      agents(4, k) = ceres::sqrt(vx * vx + vy * vy);  // linear vel as magnitude of (vx, vy)
-      agents(5, k) = T(0.0); // angular vel
+      agents(4, agent_col) = ceres::sqrt(vx * vx + vy * vy);  // linear vel as magnitude of (vx, vy)
+      agents(5, agent_col) = T(0.0); // angular vel
     }
     residuals[0] = (T)0.0;  // Initialize residual to zero for social work
     residuals[1] = (T)0.0;  // Initialize residual to zero for agent angle
@@ -171,15 +172,14 @@ public:
     residuals[3] = (T)0.0;  // Initialize residual to zero for path following
     residuals[4] = (T)0.0;  // Initialize residual to zero for path alignment
 
-    if (use_work_cost_ == true && found_people_ == true) {
-        residuals[0] += usingSocialWork(robot, agents);  // Update robot state
+  if (use_work_cost_ == true && found_people_ == true) {
+    residuals[0] += usingSocialWork(robot, agents);  // Update robot state
     } 
     if (use_angle_cost_ == true && found_people_ == true) {
-        residuals[1] += usingAngle(robot, robot_init_,
-                                    agents);// Update robot state
+  residuals[1] += usingAngle(robot, robot_init_, agents);
     }
     if (use_proxemics_cost_ == true && found_people_ == true) {
-        residuals[2] += usingProxemics(robot,agents);  // Update robot state
+  residuals[2] += usingProxemics(robot, agents);
     }
     if (use_path_follow_cost_ == true){
       Eigen::Matrix<T, 2, 1> p((T)new_position_x, (T)new_position_y);
@@ -191,48 +191,6 @@ public:
       Eigen::Matrix<T, 2, 1> p_target((T)point_[0], (T)point_[1]);
       residuals[4] = T(path_align_weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
     }
-    //robot(0, 0) = (T)new_position_x;                                                               // x
-    //robot(1, 0) = (T)new_position_y;                                                               // y
-    //robot(2, 0) = (T)new_position_orientation;                                                     // yaw
-    //robot(3, 0) = (T)counter_;                                                                     // t
-    //if (current_position_ < control_horizon_)
-    //{
-    //  robot(4, 0) = parameters[current_position_ / block_length_][0];  // lv
-    //  robot(5, 0) = parameters[current_position_ / block_length_][1];  // av
-    //}
-    //else
-    //{
-    //  robot(4, 0) = parameters[(control_horizon_ - 1) / block_length_][0];  // lv
-    //  robot(5, 0) = parameters[(control_horizon_ - 1) / block_length_][1];  // av
-    //}
-//
-    //Eigen::Matrix<T, 2, 1> robot_sf = computeSocialForce(robot, agents);  // Compute social force on robot
-    //T wr = (T)robot_sf.squaredNorm();  // Compute the squared norm of the social force on the robot
-//
-    //// compute agents' social work provoked by the robot
-    //T wp = (T)0.0;
-    //Eigen::Matrix<T, 6, 3> robot_agent;
-    //robot_agent.col(0) << robot;  // Set the first column to the robot's current state
-    //// we invalidate the other two agent
-    //// by setting t to -1
-//
-    //robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the second column to an invalid state
-    //robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
-    //for (unsigned int i = 0; i < original_agents_.cols(); i++)              // Iterate through each agent
-    //{
-    //  Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
-    //  ag.col(0) << original_agents_.col(i).template cast<T>();  // Set the current state of the agent
-    //  Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
-    //  wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
-    //}
-    //T total_social_force_magnitude_sq = wr + wp + (T)1e-6;  // Avoid division by zero
-
-    // sum the social works and multiply by the weight
-    //residual[0] = (T)weight_ * (total_social_force_magnitude_sq);
-    //RCLCPP_DEBUG_STREAM(rclcpp::get_logger("SocialWorkCost"),
-    //    "Social work cost: " << residual[0] << " (wr: " << wr << ", wp: " << wp
-    //                         << ", total: " << total_social_force_magnitude_sq << ")");
-
     return true;
   }
 
@@ -249,55 +207,54 @@ public:
    * @return Eigen::Matrix<T, 2, 1> the computed social force acting on the robot
    */
   template <typename T>
-  T usingSocialWork(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, 3> agents) const
+  T usingSocialWork(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
-    //Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
+    if (agents.cols() == 0)
+    {
+      return (T)0.0;
+    }
 
     Eigen::Matrix<T, 2, 1> robot_sf = computeSocialForce(robot, agents);  // Compute social force on robot
     T wr = (T)robot_sf.squaredNorm();  // Compute the squared norm of the social force on the robot
 
     // compute agents' social work provoked by the robot
     T wp = (T)0.0;
-    Eigen::Matrix<T, 6, 3> robot_agent;
-    robot_agent.col(0) << robot;  // Set the first column to the robot's current state
-    // we invalidate the other two agent
-    // by setting t to -1
-
-    robot_agent.col(1) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the second column to an invalid state
-    robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
-    for (unsigned int i = 0; i < agents.cols(); i++)              // Iterate through each agent
+    Eigen::Matrix<T, 6, Eigen::Dynamic> robot_agent(6, 1);
+    robot_agent.col(0) = robot;  // Robot reference for social force on agents
+    for (Eigen::Index i = 0; i < agents.cols(); i++)              // Iterate through each agent
     {
-      Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
-      ag.col(0) << agents.col(i);  // Set the current state of the agent
+      Eigen::Matrix<T, 6, 1> ag = agents.col(i);
       Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
       wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
     }
-    //std::cout << "wp: " << wp << std::endl;
-    //std::cout << "wr: " << wr << std::endl;
     T total_social_force_magnitude_sq = wr + wp + (T)1e-6;  // Avoid division by zero
-
-    // sum the social works and multiply by the weight
-    //residual[0] = (T)weight_ * (total_social_force_magnitude_sq);
-    //RCLCPP_DEBUG_STREAM(rclcpp::get_logger("SocialWorkCost"),
-    //    "Social work cost: " << residual[0] << " (wr: " << wr << ", wp: " << wp
-    //                         << ", total: " << total_social_force_magnitude_sq << ")");
 
     return (T)total_social_force_magnitude_sq * (T)work_weight_;  // Return the total social force magnitude scaled by weight
   }
   template <typename T>
-  T usingProxemics(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, 3> agents) const
+  T usingProxemics(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
+
+    if (agents.cols() == 0)
+    {
+      return (T)0.0;
+    }
 
     T proxemics_cost = computeProxemics(robot, agents);  // Compute proxemics cost on robot
     return (T)proxemics_weight_ * proxemics_cost;           // Scale the proxemics cost by the weight
   }
   template <typename T>
-  T usingAngle(const Eigen::Matrix<T,6,1> robot,const geometry_msgs::msg::Pose robot_init_, const Eigen::Matrix<T, 6, 3>& agents)
+  T usingAngle(const Eigen::Matrix<T,6,1> robot,const geometry_msgs::msg::Pose robot_init_, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents)
    const
   {
+    if (agents.cols() == 0)
+    {
+      return T(0.0);
+    }
+
     int closest_index = -1;
     T closest_distance_squared = T(9999.0);
-    for (unsigned int i = 0; i < agents.cols(); i++)
+  for (Eigen::Index i = 0; i < agents.cols(); i++)
     {
       T dx = agents(0,i) - T(robot_init_.position.x);
       T dy = agents(1,i) - T(robot_init_.position.y);
@@ -312,9 +269,7 @@ public:
     {
       return T(0.0);  // If no valid agent is found, return zero cost
     }
-    Eigen::Matrix<T,6,1> closest_agent;
-    closest_agent = agents.col(closest_index);
-    const auto& agent = closest_agent;
+  Eigen::Matrix<T,6,1> agent = agents.col(closest_index);
     // Compute angles.
     T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
     T robot_yaw = T(tf2::getYaw(robot_init_.orientation));
@@ -359,14 +314,14 @@ public:
   }
   template <typename T>
   Eigen::Matrix<T, 2, 1> computeSocialForce(const Eigen::Matrix<T, 6, 1>& me,
-                                            const Eigen::Matrix<T, 6, 3>& agents) const
+                                            const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
     Eigen::Matrix<T, 2, 1> meSocialforce((T)0.0, (T)0.0);  // Initialize the social force vector
     Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);            // Extract the position of the robot
     Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
                                  me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
 
-    for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
+  for (Eigen::Index i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
       if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
         continue;
@@ -380,8 +335,9 @@ public:
       }
       Eigen::Matrix<T, 2, 1> diffDirection = diff.normalized();  // Normalize the difference vector
 
-      Eigen::Matrix<T, 2, 1> aVel(agents(4, i) * ceres::cos(agents(2, i)),
-                                  agents(5, i) * ceres::sin(agents(2, i)) );  // Extract the velocity of the agent
+  T agent_speed = agents(4, i);
+  Eigen::Matrix<T, 2, 1> aVel(agent_speed * ceres::cos(agents(2, i)),
+              agent_speed * ceres::sin(agents(2, i)));  // Extract the velocity of the agent
       Eigen::Matrix<T, 2, 1> velDiff =
           meVel - aVel;  // Calculate the difference in velocity between the robot and the agent
       Eigen::Matrix<T, 2, 1> interactionVector =
@@ -423,14 +379,14 @@ public:
     return meSocialforce;
   }
   template <typename T>
-  T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, 3>& agents) const
+  T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
     T min_distance((T)std::numeric_limits<T>::max());  // Initialize minimum distance to a large value
     Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
     Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
                                  me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
 
-    for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
+  for (Eigen::Index i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
       if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
         continue;
@@ -458,7 +414,7 @@ private:
   double proxemics_weight_;
   double path_follow_weight_;
   double path_align_weight_;
-  Eigen::Matrix<double, 6, 3> original_agents_;
+  Eigen::Matrix<double, 6, Eigen::Dynamic> original_agents_;
   Eigen::Matrix<double, 2, 1> final_point_;  // Target point for
   Eigen::Matrix<double, 2, 1> point_;        // Point for path alignment
   AgentsStates agents_init_;  // Initial states of the agents

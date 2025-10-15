@@ -54,7 +54,6 @@
 #include "obstacle_distance_msgs/msg/obstacle_distance.hpp"
 #include "people_msgs/msg/people.hpp"
 #include "mpc_enlarged_state/tools/type_definitions.hpp"
-#include "mpc_enlarged_state/state_cache.hpp"
 
 namespace mpc_enlarged_state
 {
@@ -99,6 +98,7 @@ struct OptimizerParams
   int discretization_;
   int control_horizon_;
   int parameter_block_length_;
+  int max_agents;
   bool debug;
   int max_iterations;
 };
@@ -198,7 +198,6 @@ public:
    * @return false if optimization failed
    */
   bool optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj, const nav2_costmap_2d::Costmap2D* costmap,
-                //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                 std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                 const geometry_msgs::msg::Twist& speed, const float time_step);
 
@@ -238,23 +237,7 @@ private:
    * @param timestep Time step
    * @return Vector of vector of agent statuses
    */
-  AgentsTrajectories project_people(const AgentsStates& init_people
-                                   //     , const AgentTrajectory& robot_path,
-                                    //const obstacle_distance_msgs::msg::ObstacleDistance& od,
-                                   //  const float& maxtime,
-                                   // const float& timestep
-                                  );
-  /**
-   * @brief Project people positions for one step
-   * @param target_people Target people positions
-   * @param robot Robot status
-   * @param od Obstacle distances
-   * @param maxtime Maximum time horizon
-   * @param timestep Time step
-   * @return Vector of agent statuses
-   */
-
-  //Eigen::Vector2d computeObstacle(const Eigen::Vector2d& apos, const obstacle_distance_msgs::msg::ObstacleDistance& od);
+  AgentsTrajectories project_people(const AgentsStates& init_people);
 
   bool debug_;
   unsigned int control_horizon_;
@@ -278,6 +261,7 @@ private:
   std::shared_ptr<ceres::Grid2D<float>> obs_grid_;
   std::string frame_;
   rclcpp::Time path_time_;
+  size_t max_agents_;
 };
 
 }  // namespace mpc_enlarged_state

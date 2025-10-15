@@ -2,6 +2,7 @@
 #define MPC_ENLARGED_STATE__UPDATE_STATE_HPP_
 
 #include <Eigen/Core>
+#include <algorithm>
 #include <vector>
 
 #include "ceres/ceres.h"
@@ -72,19 +73,17 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
   T x = T(pose_0.position.x);
   T y = T(pose_0.position.y);
   T theta = T(tf2::getYaw(pose_0.orientation));
-  //T agent_x_1 = T(agent(0,0));
-  //T agent_y_1 = T(agent(1,0));
-  //T agent_theta_1 = T(agent(2,0));
-  //T agent_x_2 = T(agent(0,1));
-  //T agent_y_2 = T(agent(1,1));
-  //T agent_theta_2 = T(agent(2,1));
-  //T agent_x_3 = T(agent(0,2));
-  //T agent_y_3 = T(agent(1,2));
-  //T agent_theta_3 = T(agent(2,2));
-  std::array<T,3> agent_x     = { T(agents[0](0,0)), T(agents[1](0,0)), T(agents[2](0,0)) };
-  std::array<T,3> agent_y     = { T(agents[0](1,0)), T(agents[1](1,0)), T(agents[2](1,0)) };
-  std::array<T,3> agent_theta = { T(agents[0](2,0)), T(agents[1](2,0)), T(agents[2](2,0)) };
-  //T agent_theta = T(agents[0](2,0));
+  const auto tracked_agents = std::min(static_cast<size_t>(num_agents), agents.size());
+  std::vector<T> agent_x(tracked_agents, T(0.0));
+  std::vector<T> agent_y(tracked_agents, T(0.0));
+  std::vector<T> agent_theta(tracked_agents, T(0.0));
+  for (size_t idx = 0; idx < tracked_agents; ++idx)
+  {
+    agent_x[idx] = T(agents[idx](0, 0));
+    agent_y[idx] = T(agents[idx](1, 0));
+    agent_theta[idx] = T(agents[idx](2, 0));
+  }
+
   // Sum the contributions of the control inputs for the first i steps.
   for (unsigned int j = 0; j <= i; j++)
   {
@@ -96,7 +95,7 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
       theta += parameters[block_index][1] * dt;
       // Check the number of agents and update their states accordingly
     
-      for (unsigned k = 0; k < num_agents; ++k) { 
+  for (size_t k = 0; k < tracked_agents; ++k) {
       // param index for agent k:
       unsigned idx = 2 + 2*k;
       T vx = parameters[block_index][idx];
@@ -107,48 +106,24 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
       agent_theta[k] = ceres::atan2(vy, vx);
       }
     }
-      //  agent_x_1 += parameters[block_index][2] * ceres::cos(agent_theta_1) * dt;
-      //  agent_y_1 += parameters[block_index][2] * ceres::sin(agent_theta_1) * dt;
-      //  agent_theta_1 += parameters[block_index][3] * dt;
-      //}
-      //if (agents.cols() > 1) {
-      //  agent_x_2 += parameters[block_index][4] * ceres::cos(agent_theta_2) * dt;
-      //  agent_y_2 += parameters[block_index][4] * ceres::sin(agent_theta_2) * dt;
-      //  agent_theta_2 += parameters[block_index][5] * dt;
-      //}
-      //if (agents.cols() > 2) {
-      //  agent_x_3 += parameters[block_index][6] * ceres::cos(agent_theta_3) * dt;
-      //  agent_y_3 += parameters[block_index][6] * ceres::sin(agent_theta_3) * dt;
-      //  agent_theta_3 += parameters[block_index][7] * dt;
-      //}
-      // Update agent_theta based on agent's velocity along x and y
-      //agent_theta = ceres::atan2(parameters[block_index][3], parameters[block_index][2]);
     else
     {
       x += parameters[(control_horizon - 1) / block_size][0] * ceres::cos(theta) * dt;
       y += parameters[(control_horizon - 1) / block_size][0] * ceres::sin(theta) * dt;
       theta += parameters[(control_horizon - 1) / block_size][1] * dt;
-      for (unsigned k = 0; k < num_agents; ++k) { 
+  for (size_t k = 0; k < tracked_agents; ++k) {
       // param index for agent k:
       unsigned idx = 2 + 2*k;
-      T speed   = parameters[(control_horizon-1)/block_size][idx];
-      T omega   = parameters[(control_horizon-1)/block_size][idx + 1];
+  T vx = parameters[(control_horizon-1)/block_size][idx];
+  T vy = parameters[(control_horizon-1)/block_size][idx + 1];
 
-      agent_x[k]     += speed * ceres::cos(agent_theta[k]) * dt;
-      agent_y[k]     += speed * ceres::sin(agent_theta[k]) * dt;
-      agent_theta[k] += omega * dt;
+  agent_x[k]     += vx * dt;
+  agent_y[k]     += vy * dt;
+  agent_theta[k]  = ceres::atan2(vy, vx);
       }
-      //agent_x += parameters[(control_horizon - 1) / block_size][2] * ceres::cos(agent_theta) * dt;
-      //agent_y += parameters[(control_horizon - 1) / block_size][2] * ceres::sin(agent_theta) * dt;
-      //agent_theta += parameters[(control_horizon - 1) / block_size][3] * dt;
-      //agent_theta = ceres::atan2(parameters[(control_horizon - 1) / block_size][3], parameters[(control_horizon - 1) / block_size][2]);
     }
   }
-  std::vector<T> x_(agent_x.begin(), agent_x.end());
-  std::vector<T> y_(agent_y.begin(), agent_y.end());
-  std::vector<T> theta_(agent_theta.begin(), agent_theta.end());
-
-  return std::make_tuple(x, y, theta, x_, y_, theta_);
+  return std::make_tuple(x, y, theta, agent_x, agent_y, agent_theta);
   
 
 }

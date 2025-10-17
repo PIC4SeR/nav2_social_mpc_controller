@@ -41,7 +41,6 @@
 #include "mpc_base/critics/curvature_cost_function.hpp"
 #include "mpc_base/critics/distance_cost_function.hpp"
 #include "mpc_base/critics/goal_align_cost_function.hpp"
-#include "mpc_base/critics/overall_social_cost_function.hpp"
 #include "mpc_base/critics/obstacle_cost_function.hpp"
 #include "mpc_base/critics/social_work_cost_function.hpp"
 #include "mpc_base/critics/velocity_cost_function.hpp"

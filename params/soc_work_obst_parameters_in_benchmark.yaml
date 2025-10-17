@@ -124,7 +124,7 @@ controller_server:
         debug_optimizer: false
         current_path_weight: 1.0
         current_cmds_weight: 0.5
-        overall_cost:
+        critics:
           enable_proxemics: true
           enable_social_work: false
           enable_angle: false

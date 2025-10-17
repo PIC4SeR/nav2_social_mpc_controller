@@ -24,13 +24,13 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   std::string trajectorizer = name + std::string(".trajectorizer.");
   std::string local_name = name + std::string(".optimizer.");
   std::string weights = local_name + std::string("weights.");
-  std::string overall_cost = local_name + std::string("overall_cost.");
+  std::string overall_cost = local_name + std::string("critics.");
 
   // Optimizer params
   nav2_util::declare_parameter_if_not_declared(
       node, local_name + "linear_solver_type",
       rclcpp::ParameterValue("SPARSE_NORMAL_CHOLESKY"));  // SPARSE_NORMAL_CHOLESKY
-                                                          // //DENSE_QR
+
   node->get_parameter(local_name + "linear_solver_type", linear_solver_type);
   if (solver_types.find(linear_solver_type) == solver_types.end())
   {

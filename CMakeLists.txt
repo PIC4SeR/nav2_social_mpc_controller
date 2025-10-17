@@ -58,6 +58,7 @@ add_library(mpc_base_critics SHARED
   src/critics/curvature_cost_function.cpp
   src/critics/distance_cost_function.cpp
   src/critics/goal_align_cost_function.cpp
+  src/critics/overall_social_cost_function.cpp
   src/critics/obstacle_cost_function.cpp
   src/critics/social_work_cost_function.cpp
   src/critics/velocity_cost_function.cpp

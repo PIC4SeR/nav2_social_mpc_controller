@@ -41,6 +41,7 @@
 #include "mpc_base/critics/curvature_cost_function.hpp"
 #include "mpc_base/critics/distance_cost_function.hpp"
 #include "mpc_base/critics/goal_align_cost_function.hpp"
+#include "mpc_base/critics/overall_social_cost_function.hpp"
 #include "mpc_base/critics/obstacle_cost_function.hpp"
 #include "mpc_base/critics/social_work_cost_function.hpp"
 #include "mpc_base/critics/velocity_cost_function.hpp"
@@ -90,12 +91,18 @@ struct OptimizerParams
   double goal_align_w_;
   double obstacle_w_;
   double proxemics_w_;
+  bool use_social_work_cost;
+  bool use_social_angle_cost;
+  bool use_social_proxemics_cost;
+  bool use_social_path_follow_cost;
+  bool use_social_path_align_cost;
   float current_path_w;
   float current_cmds_w;
   float max_time;
   int discretization_;
   int control_horizon_;
   int parameter_block_length_;
+  int max_agents;
   bool debug;
   int max_iterations;
 };
@@ -235,6 +242,11 @@ private:
   double curvature_w_;
   double proxemics_w_;
   double curvature_angle_min_;
+  bool use_social_work_cost_{true};
+  bool use_social_angle_cost_{true};
+  bool use_social_proxemics_cost_{true};
+  bool use_social_path_follow_cost_{true};
+  bool use_social_path_align_cost_{true};
   float current_path_w;
   float current_cmds_w;
   ceres::Solver::Options options_;
@@ -242,6 +254,7 @@ private:
   std::shared_ptr<ceres::Grid2D<float>> obs_grid_;
   std::string frame_;
   rclcpp::Time path_time_;
+  size_t max_agents_;
 };
 
 }  // namespace mpc_base

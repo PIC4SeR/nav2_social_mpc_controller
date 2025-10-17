@@ -139,7 +139,7 @@ public:
   {
     // calling the function to propagate forward the state, adding the subsequent velocity commands
     // to the robot state
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
+    auto [new_position_x, new_position_y, new_position_orientation] = getCachedUpdatedState(
       robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
 
     // starting from the robot position, we compute the interpolated cost using bi-cubic interpolation

@@ -87,7 +87,7 @@ public:
     Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
     Eigen::Matrix<T, 6, 1> robot;
 
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
+  auto [new_position_x, new_position_y, new_position_orientation] = getCachedUpdatedState(
         robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
     //auto [new_position_x, new_position_y, new_position_orientation, agents] =
     //    computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,

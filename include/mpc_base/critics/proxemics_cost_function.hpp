@@ -22,6 +22,7 @@
 #include "glog/logging.h"
 #include "mpc_base/update_state.hpp"
 #include "mpc_base/tools/type_definitions.hpp"
+#include <cmath>
 
 namespace mpc_base
 {
@@ -83,12 +84,25 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residual) const
   {
+    if (!std::isfinite(weight_))
+    {
+      residual[0] = T(0.0);
+      return true;
+    }
+
     // Compute robot social work
     Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
     Eigen::Matrix<T, 6, 1> robot;
 
-  auto [new_position_x, new_position_y, new_position_orientation] = getCachedUpdatedState(
-        robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    auto [new_position_x, new_position_y, new_position_orientation] =
+        getCachedUpdatedState(robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
+
+    if (!ceres::IsFinite(new_position_x) || !ceres::IsFinite(new_position_y) ||
+        !ceres::IsFinite(new_position_orientation))
+    {
+      residual[0] = T(0.0);
+      return true;
+    }
     //auto [new_position_x, new_position_y, new_position_orientation, agents] =
     //    computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,
     //                    block_length_);  // Update robot state
@@ -98,17 +112,44 @@ public:
     robot(3, 0) = (T)counter_;                                                                     // t
     if (current_position_ < control_horizon_)
     {
-      robot(4, 0) = parameters[current_position_ / block_length_][0];  // lv
-      robot(5, 0) = parameters[current_position_ / block_length_][1];  // av
+      const unsigned int block_index = current_position_ / block_length_;
+      T lv = parameters[block_index][0];
+      T av = parameters[block_index][1];
+      if (!ceres::IsFinite(lv) || !ceres::IsFinite(av))
+      {
+        residual[0] = T(0.0);
+        return true;
+      }
+      robot(4, 0) = lv;  // lv
+      robot(5, 0) = av;  // av
     }
     else
     {
-      robot(4, 0) = parameters[(control_horizon_ - 1) / block_length_][0];  // lv
-      robot(5, 0) = parameters[(control_horizon_ - 1) / block_length_][1];  // av
+      const unsigned int block_index = (control_horizon_ - 1) / block_length_;
+      T lv = parameters[block_index][0];
+      T av = parameters[block_index][1];
+      if (!ceres::IsFinite(lv) || !ceres::IsFinite(av))
+      {
+        residual[0] = T(0.0);
+        return true;
+      }
+      robot(4, 0) = lv;  // lv
+      robot(5, 0) = av;  // av
     }
 
     T proxemics_cost = computeProxemics(robot, agents);  // Compute proxemics cost on robot
-    residual[0] = (T)weight_ * proxemics_cost;           // Scale the proxemics cost by the weight
+    if (!ceres::IsFinite(proxemics_cost))
+    {
+      residual[0] = T(0.0);
+      return true;
+    }
+
+    residual[0] = (T)weight_ * proxemics_cost;  // Scale the proxemics cost by the weight
+    if (!ceres::IsFinite(residual[0]))
+    {
+      residual[0] = T(0.0);
+      return true;
+    }
     return true;
   }
 
@@ -128,28 +169,57 @@ public:
   template <typename T>
   T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, 3>& agents) const
   {
-    T min_distance((T)std::numeric_limits<T>::max());  // Initialize minimum distance to a large value
-    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
-    Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
-                                 me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
-
-    for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
+    if (!ceres::IsFinite(me[0]) || !ceres::IsFinite(me[1]) || !ceres::IsFinite(me[2]) || !ceres::IsFinite(me[4]))
     {
-      if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
-        continue;
-
-      Eigen::Matrix<T, 2, 1> aPos(agents(0, i), agents(1, i));  // Extract the position of the agent
-      Eigen::Matrix<T, 2, 1> diff =
-          mePos - aPos;                         // Calculate the difference in position between the robot and the agent
-      T squared_distance = diff.squaredNorm();  // Calculate the squared distance between the robot and the agent
-      if (squared_distance < 1e-6)              // If the squared distance is too small, set a fixed direction
-      {
-        diff = Eigen::Matrix<T, 2, 1>((T)1e-6, (T)0.0);  // Use a fixed small direction
-      }
-      min_distance = std::min(min_distance, squared_distance);  // Update the minimum distance
+      return T(0.0);
     }
-    T proxemics_cost =
-        (T)alpha_ * ceres::exp(-min_distance / ((T)d0_ * (T)d0_));  // Exponential decay based on distance
+
+    T min_distance = T(1e6);  // Start with a large distance
+    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
+
+    bool found_valid_agent = false;
+
+    for (unsigned int i = 0; i < agents.cols(); i++)
+    {
+      if (agents(3, i) == (T)-1.0)
+      {
+        continue;
+      }
+
+      if (!ceres::IsFinite(agents(0, i)) || !ceres::IsFinite(agents(1, i)) || !ceres::IsFinite(agents(2, i)) ||
+          !ceres::IsFinite(agents(4, i)))
+      {
+        continue;
+      }
+
+      Eigen::Matrix<T, 2, 1> aPos(agents(0, i), agents(1, i));
+      Eigen::Matrix<T, 2, 1> diff = mePos - aPos;
+      T squared_distance = diff.squaredNorm();
+
+      if (!ceres::IsFinite(squared_distance))
+      {
+        continue;
+      }
+
+      squared_distance = ceres::fmax(squared_distance, T(1e-6));
+      min_distance = ceres::fmin(min_distance, squared_distance);
+      found_valid_agent = true;
+    }
+
+    if (!found_valid_agent)
+    {
+      return T(0.0);
+    }
+
+    T denom = T(d0_) * T(d0_);
+    denom = ceres::fmax(denom, T(1e-6));
+
+    T proxemics_cost = T(alpha_) * ceres::exp(-min_distance / denom);
+    if (!ceres::IsFinite(proxemics_cost))
+    {
+      return T(0.0);
+    }
+
     return proxemics_cost;
   }
 

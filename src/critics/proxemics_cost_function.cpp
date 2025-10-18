@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cmath>
+
 #include "mpc_base/critics/proxemics_cost_function.hpp"
 
 namespace mpc_base
@@ -28,10 +30,24 @@ ProxemicsCost::ProxemicsCost(double weight, const AgentsStates& agents_init, con
   , control_horizon_(control_horizon)
   , block_length_(block_length)
 {
+  original_agents_.setZero();
+  original_agents_.row(3).setConstant(-1.0);
+
   for (unsigned int j = 0; j < agents_init.size(); j++)
   {
-    original_agents_.col(j) << agents_init[j][0], agents_init[j][1], agents_init[j][2], agents_init[j][3],
-        agents_init[j][4], agents_init[j][5];
+    if (j >= static_cast<unsigned int>(original_agents_.cols()))
+    {
+      break;
+    }
+    const auto& agent = agents_init[j];
+    bool valid = std::isfinite(agent[0]) && std::isfinite(agent[1]) && std::isfinite(agent[2]) &&
+                 std::isfinite(agent[3]) && std::isfinite(agent[4]) && std::isfinite(agent[5]);
+    if (!valid || agent[3] < 0.0)
+    {
+      continue;
+    }
+
+    original_agents_.col(j) << agent[0], agent[1], agent[2], agent[3], agent[4], agent[5];
   }
 
   alpha_ = 3.0;  // Scaling factor for the proxemics cost

@@ -194,7 +194,12 @@ public:
       Eigen::Matrix<T, 2, 1> interactionVector =
           (T)sfm_lambda_ * velDiff + diffDirection;  // Calculate the interaction vector
 
-      T interactionLength = interactionVector.norm();  // Calculate the length of the interaction vector
+    T interactionLength = interactionVector.norm();  // Calculate the length of the interaction vector
+    if (!ceres::IsFinite(interactionLength) || interactionLength < T(1e-6))
+    {
+    // Degenerate interaction; skip to avoid dividing by ~0 and producing NaNs.
+    continue;
+    }
       Eigen::Matrix<T, 2, 1> interactionDirection =
           interactionVector / interactionLength;  // Normalize the interaction vector
 

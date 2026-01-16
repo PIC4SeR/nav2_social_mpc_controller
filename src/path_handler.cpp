@@ -101,7 +101,21 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
 
   if (transformed_plan.poses.empty())
   {
-    throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
+    RCLCPP_WARN(logger_, "No pose of the global plan is inside the local costmap. Projecting closest pose.");
+    geometry_msgs::msg::PoseStamped projected_pose = transformGlobalPoseToLocal(*transformation_begin);
+
+    const auto* costmap = costmap_ros_->getCostmap();
+    const double min_x = costmap->getOriginX();
+    const double min_y = costmap->getOriginY();
+    const double max_x = min_x + costmap->getSizeInMetersX();
+    const double max_y = min_y + costmap->getSizeInMetersY();
+    auto clampToBounds = [](double value, double min, double max) {
+      return std::max(min, std::min(value, max));
+    };
+
+    projected_pose.pose.position.x = clampToBounds(projected_pose.pose.position.x, min_x, max_x);
+    projected_pose.pose.position.y = clampToBounds(projected_pose.pose.position.y, min_y, max_y);
+    transformed_plan.poses.push_back(projected_pose);
   }
 
   return transformed_plan;

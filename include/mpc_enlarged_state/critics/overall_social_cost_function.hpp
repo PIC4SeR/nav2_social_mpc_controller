@@ -381,7 +381,7 @@ public:
   template <typename T>
   T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
-    T min_distance((T)std::numeric_limits<T>::max());  // Initialize minimum distance to a large value
+    T min_distance(1000.0);  // Initialize minimum distance to a large value
     Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
     Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
                                  me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot

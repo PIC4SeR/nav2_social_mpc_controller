@@ -57,12 +57,15 @@ void MPCEnlargedState::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr&
   logger_ = node->get_logger();
   double transform_tolerance;
   declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.5));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".fov_angle", rclcpp::ParameterValue(M_PI / 4));
   declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_robot_pose_search_dist",
+                                    rclcpp::ParameterValue(4.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".goal_dist_tol", rclcpp::ParameterValue(2.5));
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
-  node->get_parameter(plugin_name_ + ".fov_angle", fov_angle_);
+  node->get_parameter(plugin_name_ + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
+  node->get_parameter(plugin_name_ + ".goal_dist_tol", goal_dist_tol_);
   // Create the trajectorizer
   trajectorizer_ = std::make_unique<PathTrajectorizer>();
   trajectorizer_->configure(node, name, tf_);
@@ -187,8 +190,8 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     RCLCPP_WARN(logger_, "Goal checker is null");
   }
   nav_msgs::msg::Path transformed_plan =
-      path_handler_->transformGlobalPlan(robot_pose, 4.0);  // TODO: make this a parameter
-  auto goal = path_handler_->getTransformedGoal(2.5, transformed_plan, robot_pose);
+      path_handler_->transformGlobalPlan(robot_pose, max_robot_pose_search_dist_);
+  auto goal = path_handler_->getTransformedGoal(goal_dist_tol_, transformed_plan, robot_pose);
 
   // Trajectorize the path
   nav_msgs::msg::Path traj_path = transformed_plan;
@@ -197,6 +200,18 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
 
   if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
   {
+
+    // reset the plan in the path handler if trajectorization fails and the goal in not in the target tolerance
+    double dist_to_goal = euclidean_distance(robot_pose.pose.position, goal.point);
+    if (dist_to_goal > goal_dist_tol_)
+    {
+      RCLCPP_WARN(logger_, "Trajectorization failed and goal not reached (dist to goal: %f), resetting plan", dist_to_goal);
+      path_handler_->resetPlan();
+      // return zero velocity
+      geometry_msgs::msg::TwistStamped zero_vel;
+      zero_vel.header = robot_pose.header;
+      return zero_vel;
+    }
     geometry_msgs::msg::TwistStamped cmd_vel;
     // Fallback: align with the goal and move forward if possible
     cmd_vel.header = robot_pose.header;
@@ -225,28 +240,7 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   // float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
 
   // Be careful, path and people must be in the same frame
-  people_msgs::msg::People people_unf = people_interface_->getPeople();
-  people_msgs::msg::People people;
-
-  // only use people in the FOV of the robot, in this case (-90°,90° supposed )
-  for (auto p : people_unf.people)
-  {
-    uint mx, my;
-    if (!costmap_->worldToMap(p.position.x, p.position.y, mx, my))
-    {
-      RCLCPP_DEBUG(logger_, "Person %s is not in the costmap", p.name.c_str());
-      continue;
-    }
-    float angle_to_person = atan2(p.position.y - robot_pose.pose.position.y, p.position.x - robot_pose.pose.position.x);
-    float robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
-    float relative_angle = angles::shortest_angular_distance(robot_yaw, angle_to_person);
-    if (fabs(relative_angle) < fov_angle_)
-    {
-      people.people.push_back(p);
-    }
-    // Filter people based on the FOV of the robot
-  }
-  people.header.frame_id = people_unf.header.frame_id;
+  people_msgs::msg::People people = people_interface_->getPeople();
 
   if (people.header.frame_id != transformed_plan.header.frame_id)
   {

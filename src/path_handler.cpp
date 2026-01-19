@@ -97,7 +97,14 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
 
   // Remove the portion of the global plan that we've already passed so we don't
   // process it on the next iteration (this is called path pruning)
-  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+  if (transformation_begin != global_plan_.poses.begin())
+  {
+    pruned_plan_.header = global_plan_.header;
+    pruned_plan_.poses.insert(pruned_plan_.poses.end(),
+                              std::make_move_iterator(global_plan_.poses.begin()),
+                              std::make_move_iterator(transformation_begin));
+    global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+  }
 
   if (transformed_plan.poses.empty())
   {
@@ -124,6 +131,25 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
 void PathHandler::setPlan(const nav_msgs::msg::Path& path)
 {
   global_plan_ = path;
+  pruned_plan_.header = path.header;
+  pruned_plan_.poses.clear();
+}
+
+void PathHandler::resetPlan()
+{
+  if (pruned_plan_.poses.empty())
+  {
+    return;
+  }
+  nav_msgs::msg::Path restored_plan;
+  restored_plan.header = pruned_plan_.header;
+  restored_plan.poses = std::move(pruned_plan_.poses);
+  restored_plan.poses.insert(restored_plan.poses.end(),
+                             std::make_move_iterator(global_plan_.poses.begin()),
+                             std::make_move_iterator(global_plan_.poses.end()));
+  global_plan_.poses.clear();
+  global_plan_ = std::move(restored_plan);
+  pruned_plan_.poses.clear();
 }
 
 geometry_msgs::msg::PointStamped PathHandler::getTransformedGoal(const double& goal_dist,

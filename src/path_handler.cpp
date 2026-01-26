@@ -40,8 +40,11 @@ PathHandler::PathHandler(tf2::Duration transform_tolerance, std::shared_ptr<tf2_
 nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::PoseStamped& pose,
                                                      double max_robot_pose_search_dist)
 {
+  auto& global_plan_poses = global_plan_.poses;
+  auto& pruned_plan_poses = pruned_plan_.poses;
+
   // Check first if the plan is empty
-  if (global_plan_.poses.empty())
+  if (global_plan_poses.empty())
   {
     throw nav2_core::PlannerException("Received plan with zero length");
   }
@@ -56,20 +59,21 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
   // Find the first pose in the global plan that's further than max_robot_pose_search_dist
   // from the robot using integrated distance
   auto closest_pose_upper_bound = nav2_util::geometry_utils::first_after_integrated_distance(
-      global_plan_.poses.begin(), global_plan_.poses.end(), max_robot_pose_search_dist);
+      global_plan_poses.begin(), global_plan_poses.end(), max_robot_pose_search_dist);
 
   // First find the closest pose on the path to the robot
   // bounded by when the path turns around (if it does) so we don't get a pose from a later
   // portion of the path
   auto transformation_begin = nav2_util::geometry_utils::min_by(
-      global_plan_.poses.begin(), closest_pose_upper_bound,
+      global_plan_poses.begin(), closest_pose_upper_bound,
       [&robot_pose](const geometry_msgs::msg::PoseStamped& ps) { return euclidean_distance(robot_pose, ps); });
+  const geometry_msgs::msg::PoseStamped transformation_begin_pose = *transformation_begin;
 
   // We'll discard points on the plan that are outside the local costmap
-  double dist_threshold =
-      std::max(costmap_ros_->getCostmap()->getSizeInMetersX(), costmap_ros_->getCostmap()->getSizeInMetersY()) / 2.0;
+  const auto& costmap = *costmap_ros_->getCostmap();
+  double dist_threshold = std::max(costmap.getSizeInMetersX(), costmap.getSizeInMetersY()) / 2.0;
   auto transformation_end =
-      std::find_if(transformation_begin, global_plan_.poses.end(), [&](const auto& global_plan_pose) {
+      std::find_if(transformation_begin, global_plan_poses.end(), [&](const auto& global_plan_pose) {
         return euclidean_distance(global_plan_pose, robot_pose) > dist_threshold;
       });
 
@@ -97,29 +101,30 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
 
   // Remove the portion of the global plan that we've already passed so we don't
   // process it on the next iteration (this is called path pruning)
-  if (transformation_begin != global_plan_.poses.begin())
+  if (transformation_begin != global_plan_poses.begin())
   {
     pruned_plan_.header = global_plan_.header;
-    pruned_plan_.poses.insert(pruned_plan_.poses.end(),
-                              std::make_move_iterator(global_plan_.poses.begin()),
-                              std::make_move_iterator(transformation_begin));
-    global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+    pruned_plan_poses.insert(pruned_plan_poses.end(), std::make_move_iterator(global_plan_poses.begin()),
+                             std::make_move_iterator(transformation_begin));
+    global_plan_poses.erase(global_plan_poses.begin(), transformation_begin);
   }
 
   if (transformed_plan.poses.empty())
   {
-    RCLCPP_WARN(logger_, "No pose of the global plan is inside the local costmap. Projecting closest pose.");
-    geometry_msgs::msg::PoseStamped projected_pose = transformGlobalPoseToLocal(*transformation_begin);
+    RCLCPP_WARN(logger_,
+                "No pose of the global plan is inside the local costmap. Resetting plan and projecting closest pose.");
 
-    const auto* costmap = costmap_ros_->getCostmap();
-    const double min_x = costmap->getOriginX();
-    const double min_y = costmap->getOriginY();
-    const double max_x = min_x + costmap->getSizeInMetersX();
-    const double max_y = min_y + costmap->getSizeInMetersY();
+    // resetPlan();
+
+    const double min_x = costmap.getOriginX();
+    const double min_y = costmap.getOriginY();
+    const double max_x = min_x + costmap.getSizeInMetersX();
+    const double max_y = min_y + costmap.getSizeInMetersY();
     auto clampToBounds = [](double value, double min, double max) {
       return std::max(min, std::min(value, max));
     };
 
+    geometry_msgs::msg::PoseStamped projected_pose = transformGlobalPoseToLocal(transformation_begin_pose);
     projected_pose.pose.position.x = clampToBounds(projected_pose.pose.position.x, min_x, max_x);
     projected_pose.pose.position.y = clampToBounds(projected_pose.pose.position.y, min_y, max_y);
     transformed_plan.poses.push_back(projected_pose);
@@ -137,43 +142,22 @@ void PathHandler::setPlan(const nav_msgs::msg::Path& path)
 
 void PathHandler::resetPlan()
 {
-  if (pruned_plan_.poses.empty())
+  auto& pruned_plan_poses = pruned_plan_.poses;
+  if (pruned_plan_poses.empty())
   {
     return;
   }
   nav_msgs::msg::Path restored_plan;
   restored_plan.header = pruned_plan_.header;
-  restored_plan.poses = std::move(pruned_plan_.poses);
-  restored_plan.poses.insert(restored_plan.poses.end(),
-                             std::make_move_iterator(global_plan_.poses.begin()),
-                             std::make_move_iterator(global_plan_.poses.end()));
-  global_plan_.poses.clear();
+  restored_plan.poses = std::move(pruned_plan_poses);
+
+  auto& global_plan_poses = global_plan_.poses;
+  restored_plan.poses.insert(restored_plan.poses.end(), std::make_move_iterator(global_plan_poses.begin()),
+                             std::make_move_iterator(global_plan_poses.end()));
+  global_plan_poses.clear();
   global_plan_ = std::move(restored_plan);
-  pruned_plan_.poses.clear();
+  pruned_plan_poses.clear();
 }
 
-geometry_msgs::msg::PointStamped PathHandler::getTransformedGoal(const double& goal_dist,
-                                                                 const nav_msgs::msg::Path& transformed_plan,
-                                                                 const geometry_msgs::msg::PoseStamped& robot_pose)
-{
-  // Find the first pose which is at a distance greater than the motion target distance
-  auto goal_pose_it = std::find_if(transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto& ps) {
-    // Check if the distance to the goal is greater than the motion target distance
-    // We use the Euclidean distance to the goal
-    // to check if the goal is far enough
-    return euclidean_distance(ps, robot_pose) >= goal_dist;
-  });
-
-  // If the pose is not far enough, take the last pose
-  if (goal_pose_it == transformed_plan.poses.end())
-  {
-    goal_pose_it = std::prev(transformed_plan.poses.end());
-  }
-
-  geometry_msgs::msg::PointStamped goal_pose;
-  goal_pose.header = transformed_plan.header;
-  goal_pose.point = goal_pose_it->pose.position;
-  return goal_pose;
-}
 
 }  // namespace mpc

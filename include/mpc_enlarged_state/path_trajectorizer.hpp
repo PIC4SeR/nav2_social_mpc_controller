@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "geometry_msgs/msg/twist_stamped.hpp"
-//#include "nav2_core/smoother.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
 #include "nav_msgs/msg/path.h"
@@ -140,24 +139,20 @@ protected:
   rclcpp::Logger logger_{ rclcpp::get_logger("PathTrajectorizer") };
   rclcpp::Clock::SharedPtr clock_;
 
-  // std::unique_ptr<nav2_constrained_smoother::Smoother> smoother_;
-  // SmootherParams smoother_params_;
-  // OptimizerParams optimizer_params_;
-
   double desired_linear_vel_;
+  double waypoint_dist_tol_;
   double lookahead_dist_;
   double max_angular_vel_;
   bool omnidirectional_;
   double time_step_;
   double max_steps_;
-  rclcpp::Duration transform_tolerance_{ 0, 0 };
+  double offset_extra_pose_;
+  int extra_points_to_waypoint_{1};
+  int iteration_{0};
+  int max_iterations_;
   std::string base_frame_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> received_path_pub_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> computed_path_pub_;
-  // double rotate_to_heading_angular_vel_;
-  // double max_lookahead_dist_;
-  // double min_lookahead_dist_;
-  // double lookahead_time_;
 };
 
 }  // namespace mpc_enlarged_state

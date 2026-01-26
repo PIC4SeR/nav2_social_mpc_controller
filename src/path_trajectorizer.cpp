@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -46,25 +48,29 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
   logger_ = node->get_logger();
 
   declare_parameter_if_not_declared(node, plugin_name_ + ".omnidirectional", rclcpp::ParameterValue(false));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.4));
   declare_parameter_if_not_declared(node, plugin_name_ + ".lookahead_dist", rclcpp::ParameterValue(0.4));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".max_angular_vel", rclcpp::ParameterValue(1.0));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(node, plugin_name_ + ".base_frame", rclcpp::ParameterValue("base_footprint"));
   declare_parameter_if_not_declared(node, plugin_name_ + ".time_step", rclcpp::ParameterValue(0.05));
   declare_parameter_if_not_declared(node, plugin_name_ + ".max_time", rclcpp::ParameterValue(3.0));
-
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_failed_trajectorizations", rclcpp::ParameterValue(50));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.2));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".waypoint_dist_tol", rclcpp::ParameterValue(0.2));
+  declare_parameter_if_not_declared(node, name + ".max_angular_vel", rclcpp::ParameterValue(1.4));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".offset_extra_pose", rclcpp::ParameterValue(0.1));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".extra_points_to_waypoint", rclcpp::ParameterValue(1));
+  
   node->get_parameter(plugin_name_ + ".omnidirectional", omnidirectional_);
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
-  node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
+  node->get_parameter(name + ".max_angular_vel", max_angular_vel_);
   node->get_parameter(plugin_name_ + ".base_frame", base_frame_);
   node->get_parameter(plugin_name_ + ".time_step", time_step_);
+  node->get_parameter(plugin_name_ + ".max_failed_trajectorizations", max_iterations_);
+  node->get_parameter(plugin_name_ + ".waypoint_dist_tol", waypoint_dist_tol_);
+  node->get_parameter(plugin_name_ + ".offset_extra_pose", offset_extra_pose_);
+
   double max_time;
   node->get_parameter(plugin_name_ + ".max_time", max_time);
-  double transform_tolerance;
-  node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
-  transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
 
   RCLCPP_DEBUG(logger_, "-------------------------------------");
   RCLCPP_DEBUG(logger_, "Path Trajectorizer params:");
@@ -116,24 +122,51 @@ void PathTrajectorizer::deactivate()
 bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_msgs::msg::PoseStamped& path_robot_pose,
                                      std::vector<geometry_msgs::msg::TwistStamped>& cmds)
 {
-  if (path.poses.size() < 2)
+  if (path.poses.empty())
   {
-    RCLCPP_WARN(logger_, "Path has less than 2 poses, cannot trajectorize");
+    RCLCPP_WARN(logger_, "Received empty path, cannot trajectorize");
     return false;
   }
+
+  // path_robot_pose must be in the same frame as the path
+  geometry_msgs::msg::PoseStamped robot_pose = path_robot_pose;
+
+  double rx = robot_pose.pose.position.x;
+  double ry = robot_pose.pose.position.y;
+  double rtheta = tf2::getYaw(robot_pose.pose.orientation);
+  
+  if (path.poses.size() == 1)
+  {
+    // compute an extra pose in the path in order to allow the trajectorization
+    // compute the distance and orientation of the only pose in the path with respect to the robot
+    double dx = path.poses[0].pose.position.x - rx;
+    double dy = path.poses[0].pose.position.y - ry;
+    double dist = std::hypot(dx, dy);
+
+    if (dist < waypoint_dist_tol_)
+    {
+      RCLCPP_WARN(logger_, "Path has only one pose very close to the robot (%.2f m), cannot trajectorize", dist);
+      return false;
+    }
+    double angle = std::atan2(dy, dx);
+    // compute a new pose at offset_extra_pose_ distance from the only pose in the path
+    geometry_msgs::msg::PoseStamped new_pose;
+    new_pose.header = path.poses[0].header;
+    new_pose.pose.position.x = path.poses[0].pose.position.x + offset_extra_pose_ * std::cos(angle);
+    new_pose.pose.position.y = path.poses[0].pose.position.y + offset_extra_pose_ * std::sin(angle);
+    new_pose.pose.position.z = path.poses[0].pose.position.z;
+    new_pose.pose.orientation = path.poses[0].pose.orientation;
+    path.poses.push_back(new_pose);
+    RCLCPP_DEBUG(logger_, "Path had only one pose, added an extra pose at (%.2f, %.2f)", new_pose.pose.position.x,
+                  new_pose.pose.position.y);
+  }
+
   rclcpp::Time t = clock_->now();
   nav_msgs::msg::Path new_path;
   new_path.header.frame_id = path.header.frame_id;
   new_path.header.stamp = t;
 
-  // path_robot_pose must be in the same frame as the path
-  geometry_msgs::msg::PoseStamped robot_pose = path_robot_pose;
   new_path.poses.push_back(robot_pose);
-
-  double rx = robot_pose.pose.position.x;
-  double ry = robot_pose.pose.position.y;
-  double rtheta = tf2::getYaw(robot_pose.pose.orientation);
-
   // Now, do a loop:
   // 1- Find the look-ahead point on the path.
   // 2- Find the cmds to approach the point
@@ -142,31 +175,30 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
   // 4- Repeat steps 1 and 2 for the new simulated robot pose until
   // reaching the end of the path
 
-  double goal_dist = 1000.0;
-  double goal_dist_threshold = 0.2;
+  double goal_dist = std::numeric_limits<double>::max();
   int steps = 0;
-  while (goal_dist > goal_dist_threshold && steps < max_steps_)
+  // for (int steps = 0; steps < max_steps_ && goal_dist > waypoint_dist_tol_; steps++)
+  // goal_dist is updated inside the loop
+  while (goal_dist > waypoint_dist_tol_ && steps < max_steps_) // max_steps_ to avoid infinite loops
   {
-    double wpx;
-    double wpy;
-    double min_dist = 100.0;
-    int wp_index = -1;
-    double wp_dist = 1000.0;
+    double wpx; // lookahead point x
+    double wpy; // lookahead point y
+    double min_dist = std::numeric_limits<double>::max();
+    int wp_index = static_cast<int>(path.poses.size() - 1); // lookahead point index
     // --- 1 ---
-    for (int i = path.poses.size() - 1; i >= 0; i--)
+
+    for (std::size_t idx = path.poses.size(); idx-- > 0;) // iterate from end to start
     {
-      wpx = path.poses[i].pose.position.x;
-      wpy = path.poses[i].pose.position.y;
-      wp_dist = sqrt((rx - wpx) * (rx - wpx) + (ry - wpy) * (ry - wpy));
-      if (wp_dist <= lookahead_dist_)
+      const auto dist = nav2_util::geometry_utils::euclidean_distance(robot_pose.pose, path.poses[idx].pose);
+      if (dist <= lookahead_dist_) // first point within lookahead distance
       {
-        wp_index = i;
+        wp_index = static_cast<int>(idx);
         break;
       }
-      if (wp_dist < min_dist)
+      if (dist < min_dist) // update closest point if no point within lookahead distance is found
       {
-        min_dist = wp_dist;
-        wp_index = i;
+        min_dist = dist;
+        wp_index = static_cast<int>(idx);
       }
     }
 
@@ -190,30 +222,18 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
     }
     else  // non-omnidirectional robot (use different control laws to implement the reference trajectory)
     {
+
       double point_dist2 = (dx * dx + dy * dy);
       double curvature = 0.0;
-      if (point_dist2 > 0.001)
+      
+      if (point_dist2 > 1e-3)
       {
         curvature = 2.0 * dy / point_dist2;
       }
       // Setting the velocity direction
       vx = desired_linear_vel_;
-
-      // Make sure we're in compliance with basic constraints
-      // double angle_to_heading;
-
-      // if the angle to the path is too large, rotate in place
-      if (fabs(dtheta) > M_PI / 2.0)
-      {
-        // rotate in place
-        vx = 0.0;
-        wz = max_angular_vel_ * (dtheta > 0 ? 1.0 : -1.0);
-      }
-      else
-      {
-        // apply curvature to angular velocity
-        wz = vx * curvature;
-      }
+      // apply curvature to angular velocity
+      wz = vx * curvature;
 
     }
 
@@ -234,7 +254,6 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
     robot_pose.header.stamp = time;
     new_path.poses.push_back(robot_pose);
 
-    // cmd vel
     geometry_msgs::msg::TwistStamped vel;
     vel.header.frame_id = base_frame_;
     vel.header.stamp = curr_t;
@@ -243,7 +262,6 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
     vel.twist.angular.z = wz;
     cmds.push_back(vel);
 
-    // update goal dist
     wpx = path.poses[path.poses.size() - 1].pose.position.x;
     wpy = path.poses[path.poses.size() - 1].pose.position.y;
     goal_dist = sqrt((rx - wpx) * (rx - wpx) + (ry - wpy) * (ry - wpy));

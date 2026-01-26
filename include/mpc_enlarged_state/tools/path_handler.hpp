@@ -75,17 +75,6 @@ public:
     return global_plan_;
   }
 
-  /**
-   * @brief Gets the transformed goal
-   *
-   * @param goal_dist The distance to the goal
-   * @param transformed_plan The transformed plan
-   * @return The transformed goal
-   */
-
-  geometry_msgs::msg::PointStamped getTransformedGoal(const double& goal_dist,
-                                                      const nav_msgs::msg::Path& transformed_plan,
-                                                      const geometry_msgs::msg::PoseStamped& robot_pose);
 
 protected:
   rclcpp::Duration transform_tolerance_{ 0, 0 };

@@ -106,6 +106,11 @@ struct OptimizerParams
   int max_agents;
   bool debug;
   int max_iterations;
+  double max_linear_vel;
+  double min_linear_vel;
+  double max_angular_vel;
+  double min_angular_vel;
+  double desired_linear_vel;
 };
 
 /**
@@ -266,6 +271,11 @@ private:
   bool use_social_path_align_cost_{true};
   float current_path_w;
   float current_cmds_w;
+  double max_linear_vel_;
+  double min_linear_vel_;
+  double max_angular_vel_;
+  double min_angular_vel_;
+  double desired_linear_vel_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
   std::shared_ptr<ceres::Grid2D<float>> obs_grid_;

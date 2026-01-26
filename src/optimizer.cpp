@@ -98,6 +98,15 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   nav2_util::declare_parameter_if_not_declared(node, local_name + "max_agents", rclcpp::ParameterValue(0));
   node->get_parameter(local_name + "max_agents", max_agents);
   node->get_parameter(trajectorizer + "max_time", max_time);
+
+  nav2_util::declare_parameter_if_not_declared(node, name + "max_linear_vel", rclcpp::ParameterValue(0.6));
+  nav2_util::declare_parameter_if_not_declared(node, name + "min_linear_vel", rclcpp::ParameterValue(0.0));
+  nav2_util::declare_parameter_if_not_declared(node, name + "max_angular_vel", rclcpp::ParameterValue(1.4));
+  nav2_util::declare_parameter_if_not_declared(node, trajectorizer + "desired_linear_vel", rclcpp::ParameterValue(0.3));
+  node->get_parameter(name + "max_linear_vel", max_linear_vel);
+  node->get_parameter(name + "min_linear_vel", min_linear_vel);
+  node->get_parameter(name + "max_angular_vel", max_angular_vel);
+  node->get_parameter(trajectorizer + "desired_linear_vel", desired_linear_vel);
 }
 // constructor and destructor for Optimizer
 Optimizer::Optimizer()
@@ -142,6 +151,10 @@ void Optimizer::initialize(const OptimizerParams params)
   options_.function_tolerance = params.fn_tol;
   options_.gradient_tolerance = params.gradient_tol;
   options_.parameter_tolerance = params.param_tol;
+  max_linear_vel_ = params.max_linear_vel;
+  min_linear_vel_ = params.min_linear_vel;
+  max_angular_vel_ = params.max_angular_vel;
+  desired_linear_vel_ = params.desired_linear_vel;
   if (debug_)
   {
     options_.minimizer_progress_to_stdout = true;
@@ -170,7 +183,6 @@ void Optimizer::initialize(const OptimizerParams params)
  */
 bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj,
                          const nav2_costmap_2d::Costmap2D* costmap,
-                         //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                          std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
                          const geometry_msgs::msg::Twist& speed, const float time_step)
 {
@@ -211,13 +223,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                                  current_cmds_w, max_time, time_step);
   // use the parametrized format to project the people in the field of view of the robot, using the obstacles and the
   // initial status of the people
-  people_proj = project_people(init_people
-      //, optim_status,
-    
-    //obstacles,
-    // max_time, time_step
-    );
-  //RCLCPP_INFO(rclcpp::get_logger("Optimizer"), "People projected size: %ld", people_proj.size());
+  people_proj = project_people(init_people);
   
   std::vector<agent_velocity> agent_uno_velocities;
   long unsigned int closest_agent_idx = 0;
@@ -336,7 +342,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                                         optim_positions[optim_status.size() - 1].params[1]);
 
   optim_velocities.pop_back();
-  double desired_linear_vel_ = 0.6;
 
   // setting ceres variables
   ceres::Problem problem;
@@ -442,10 +447,10 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   for (unsigned int i = 0; i < control_horizon / block_length; i++)
   {
-    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 0, 0.0);   // lower bound for linear velocity
-    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 0, 0.6);   // upper bound for linear velocity
-    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 1, -1.4);  // lower bound for angular velocity
-    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 1, 1.4);   // upper bound for angular velocity
+    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 0, min_linear_vel_);   // lower bound for linear velocity
+    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 0, max_linear_vel_);   // upper bound for linear velocity
+    problem.SetParameterLowerBound(variables_to_optimize[i].params.data(), 1, -max_angular_vel_);  // lower bound for angular velocity
+    problem.SetParameterUpperBound(variables_to_optimize[i].params.data(), 1, max_angular_vel_);   // upper bound for angular velocity
     for (unsigned int j = 0; j < num_agents; j++) {
       const auto& agent_state = (people_proj.empty() || people_proj[0].size() <= j)
                                     ? fallback_agents[j]

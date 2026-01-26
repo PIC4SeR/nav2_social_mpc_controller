@@ -20,6 +20,7 @@
 #include <string>
 
 #include "angles/angles.h"
+#include "tf2/utils.h"
 #include "nav2_core/exceptions.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
@@ -33,14 +34,6 @@ using std::max;
 using std::min;
 using namespace nav2_costmap_2d;  // NOLINT
 
-double clamp(double value, double min, double max)
-{
-  if (value < min)
-    return min;
-  if (value > max)
-    return max;
-  return value;
-}
 
 namespace mpc_enlarged_state
 {
@@ -56,16 +49,34 @@ void MPCEnlargedState::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr&
   plugin_name_ = name;
   logger_ = node->get_logger();
   double transform_tolerance;
-  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.5));
+  
+  // Declare the parameters
   declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(node, plugin_name_ + ".max_robot_pose_search_dist",
                                     rclcpp::ParameterValue(4.0));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".goal_dist_tol", rclcpp::ParameterValue(2.5));
-  node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_linear_vel", rclcpp::ParameterValue(0.6));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".min_linear_vel", rclcpp::ParameterValue(0.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_angular_vel", rclcpp::ParameterValue(1.4));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".fallback_min_goal_distance",
+                                    rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".fallback_linear_vel", rclcpp::ParameterValue(0.08));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".fallback_heading_tolerance",
+                                    rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".fallback_angular_gain",
+                                    rclcpp::ParameterValue(1.5));
+  
+  // Get the parameters
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
-  transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   node->get_parameter(plugin_name_ + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
-  node->get_parameter(plugin_name_ + ".goal_dist_tol", goal_dist_tol_);
+  node->get_parameter(plugin_name_ + ".max_linear_vel", max_linear_vel_);
+  node->get_parameter(plugin_name_ + ".min_linear_vel", min_linear_vel_);
+  node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
+  node->get_parameter(plugin_name_ + ".fallback_min_goal_distance", fallback_min_goal_distance_);
+  node->get_parameter(plugin_name_ + ".fallback_linear_vel", fallback_linear_vel_);
+  node->get_parameter(plugin_name_ + ".fallback_heading_tolerance", fallback_heading_tolerance_);
+  node->get_parameter(plugin_name_ + ".fallback_angular_gain", fallback_angular_gain_);
+  
+  transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   // Create the trajectorizer
   trajectorizer_ = std::make_unique<PathTrajectorizer>();
   trajectorizer_->configure(node, name, tf_);
@@ -184,6 +195,48 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::Twist& speed,
     nav2_core::GoalChecker* goal_checker)
 {
+  auto compute_fallback_command = [&](const geometry_msgs::msg::PoseStamped& goal_pose, double goal_distance) {
+    geometry_msgs::msg::TwistStamped fallback_cmd;
+    fallback_cmd.header = robot_pose.header;
+
+    const double dx = goal_pose.pose.position.x - robot_pose.pose.position.x;
+    const double dy = goal_pose.pose.position.y - robot_pose.pose.position.y;
+    const double goal_heading = std::atan2(dy, dx);
+    const double robot_heading = tf2::getYaw(robot_pose.pose.orientation);
+    const double heading_error = angles::shortest_angular_distance(robot_heading, goal_heading);
+
+    // Rotate towards the goal
+    double angular_cmd = fallback_angular_gain_ * heading_error;
+    angular_cmd = std::clamp(angular_cmd, -max_angular_vel_, max_angular_vel_);
+    fallback_cmd.twist.angular.z = angular_cmd;
+
+    // Only drive forward once we're mostly aligned
+    if (std::abs(heading_error) <= fallback_heading_tolerance_)
+    {
+      double normalized_dist = 1.0;
+      if (fallback_min_goal_distance_ > 1e-6)
+      {
+        normalized_dist = std::min(goal_distance / fallback_min_goal_distance_, 1.0);
+      }
+      normalized_dist = std::max(normalized_dist, 0.0);
+      double commanded_linear = fallback_linear_vel_ * normalized_dist;
+      commanded_linear = std::clamp(commanded_linear, -max_linear_vel_, max_linear_vel_);
+      if (std::abs(commanded_linear) > 1e-6 && std::abs(commanded_linear) < min_linear_vel_)
+      {
+        commanded_linear = std::copysign(min_linear_vel_, commanded_linear);
+      }
+      fallback_cmd.twist.linear.x = commanded_linear;
+    }
+    else
+    {
+      fallback_cmd.twist.linear.x = 0.0;
+    }
+
+    RCLCPP_DEBUG(logger_, "Fallback control active. dist: %.3f, heading err: %.3f, cmd_linear: %.3f, cmd_angular: %.3f",
+                 goal_distance, heading_error, fallback_cmd.twist.linear.x, fallback_cmd.twist.angular.z);
+    return fallback_cmd;
+  };
+
   // Use goal_checker to avoid unused parameter warning
   if (goal_checker == nullptr)
   {
@@ -191,53 +244,32 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   }
   nav_msgs::msg::Path transformed_plan =
       path_handler_->transformGlobalPlan(robot_pose, max_robot_pose_search_dist_);
-  auto goal = path_handler_->getTransformedGoal(goal_dist_tol_, transformed_plan, robot_pose);
 
   // Trajectorize the path
   nav_msgs::msg::Path traj_path = transformed_plan;
   std::vector<geometry_msgs::msg::TwistStamped> cmds;
-  // trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
+  auto& goal_pose = transformed_plan.poses.back();
+  const double goal_distance = euclidean_distance(goal_pose.pose, robot_pose.pose);
+
+  RCLCPP_INFO(logger_, "Goal distance: %.3f", goal_distance);
+
+  if (goal_distance <= fallback_min_goal_distance_ || fallback_)
+  {
+    fallback_ = true;
+    RCLCPP_WARN(logger_, "Trajectorization failed near goal, engaging fallback behavior. Goal distance: %.3f (threshold %.3f)",
+                 goal_distance, fallback_min_goal_distance_);
+    return compute_fallback_command(goal_pose, goal_distance);
+  }
 
   if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
   {
-
-    // reset the plan in the path handler if trajectorization fails and the goal in not in the target tolerance
-    double dist_to_goal = euclidean_distance(robot_pose.pose.position, goal.point);
-    if (dist_to_goal > goal_dist_tol_)
-    {
-      RCLCPP_WARN(logger_, "Trajectorization failed and goal not reached (dist to goal: %f), resetting plan", dist_to_goal);
-      path_handler_->resetPlan();
-      // return zero velocity
-      geometry_msgs::msg::TwistStamped zero_vel;
-      zero_vel.header = robot_pose.header;
-      return zero_vel;
-    }
-    geometry_msgs::msg::TwistStamped cmd_vel;
-    // Fallback: align with the goal and move forward if possible
-    cmd_vel.header = robot_pose.header;
-
-    // Compute angle to goal
-    double dx = goal.point.x - robot_pose.pose.position.x;
-    double dy = goal.point.y - robot_pose.pose.position.y;
-    double angle_to_goal = std::atan2(dy, dx);
-    double robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
-    double angle_diff = angles::shortest_angular_distance(robot_yaw, angle_to_goal);
-
-    // If not aligned, rotate in place
-    if (std::fabs(angle_diff) > 0.1) {
-      cmd_vel.twist.linear.x = 0.0;
-      cmd_vel.twist.angular.z = clamp(angle_diff/0.05, -0.8, 0.8);
-      RCLCPP_WARN(logger_, "Fallback: rotating to align with goal (angle diff: %f)", angle_diff);
-    } else {
-      // Aligned: move forward slowly
-      cmd_vel.twist.linear.x = 0.2;
-      cmd_vel.twist.angular.z = 0.0;
-      RCLCPP_WARN(logger_, "Fallback: moving towards goal");
-    }
-    return cmd_vel;
+    // use the fallback behavior if the trajectorization fails and the goal is near
+    RCLCPP_ERROR(logger_, "Trajectorization of the path failed returning zero velocity");
+    geometry_msgs::msg::TwistStamped zero_vel;
+    zero_vel.header = robot_pose.header;
+    return zero_vel;
   }
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
-  // float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
 
   // Be careful, path and people must be in the same frame
   people_msgs::msg::People people = people_interface_->getPeople();
@@ -245,7 +277,7 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   if (people.header.frame_id != transformed_plan.header.frame_id)
   {
     // transform people to the global frame
-    for (auto p : people.people)
+    for (auto& p : people.people)
     {
       geometry_msgs::msg::PointStamped out_point;
       geometry_msgs::msg::PointStamped in_point;
@@ -257,17 +289,13 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
       }
       p.position = out_point.point;
     }
+    people.header.frame_id = transformed_plan.header.frame_id;
   }
-
-  // Get the distance transform
-  //obstacle_distance_msgs::msg::ObstacleDistance transformed_od = obsdist_interface_->getDistanceTransform();
 
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
 
-  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_, 
-    //transformed_od,
-     cmds, people, speed, ts);
+  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,cmds, people, speed, ts);
   if (!optimized)
   {
     RCLCPP_WARN(logger_, "Optimization failed, using initial commands");
@@ -276,12 +304,37 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
   publish_people_traj(projected_people, transformed_plan.header);
   local_path_pub_->publish(traj_path);
 
+  if (!traj_path.poses.empty())
+  {
+    const auto& goal_pose = traj_path.poses.back();
+    const double goal_distance = euclidean_distance(goal_pose.pose, robot_pose.pose);
+    if (goal_distance <= fallback_min_goal_distance_)
+    {
+      RCLCPP_DEBUG(logger_, "Engaging fallback behavior. Goal distance: %.3f (threshold %.3f)", goal_distance,
+                   fallback_min_goal_distance_);
+      return compute_fallback_command(goal_pose, goal_distance);
+    }
+  }
+
+  if (cmds.empty())
+  {
+    RCLCPP_WARN(logger_, "Trajectorizer provided no commands, sending zero velocity");
+    geometry_msgs::msg::TwistStamped zero_vel;
+    zero_vel.header = robot_pose.header;
+    return zero_vel;
+  }
+
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = cmds[0].header;
-  cmd_vel.twist.linear.x = (std::abs(cmds[0].twist.linear.x) < 0.6) ? cmds[0].twist.linear.x : 0.6;
-  cmd_vel.twist.linear.y = 0;
-  cmd_vel.twist.angular.z = (std::abs(cmds[0].twist.angular.z) < 1.5) ? cmds[0].twist.angular.z : 1.5;
+  double linear_cmd = std::clamp(cmds[0].twist.linear.x, -max_linear_vel_, max_linear_vel_);
+  if (std::abs(linear_cmd) > 1e-6 && std::abs(linear_cmd) < min_linear_vel_)
+  {
+    linear_cmd = std::copysign(min_linear_vel_, linear_cmd);
+  }
+  double angular_cmd = std::clamp(cmds[0].twist.angular.z, -max_angular_vel_, max_angular_vel_);
+  cmd_vel.twist.linear.x = linear_cmd;
+  cmd_vel.twist.angular.z = angular_cmd;
   RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
   return cmd_vel;
 }
@@ -295,20 +348,17 @@ void MPCEnlargedState::setSpeedLimit(const double& speed_limit, const bool& perc
 {
   double speed_limit_ = speed_limit;
   bool percentage_ = percentage;
-  speed_limit_ = 0;
-  percentage_ = false;
   double throwaway_vel = 1;
-  // RCLCPP_DEBUG(logger_, "Setting speed limit to %f, percentage %", speed_limit_);
   if (percentage_)
   {
     throwaway_vel *= (speed_limit_ / 100.0);
     RCLCPP_DEBUG(logger_, "Speed limit set as percentage: %f%%, resulting speed: %f", speed_limit_,
-                 desired_linear_vel_);
+                  throwaway_vel);
   }
   else
   {
     throwaway_vel = speed_limit_;
-    RCLCPP_DEBUG(logger_, "Speed limit set as absolute value: %f", desired_linear_vel_);
+    RCLCPP_DEBUG(logger_, "Speed limit set as absolute value: %f", throwaway_vel);
   }
 }
 

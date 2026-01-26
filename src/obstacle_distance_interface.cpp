@@ -38,7 +38,7 @@ void ObstacleDistInterface::obs_callback(const obstacle_distance_msgs::msg::Obst
     return;
   }
   mutex_.lock();
-  obs_ = *msg;
+  obs_ = obs;
   mutex_.unlock();
 }
 

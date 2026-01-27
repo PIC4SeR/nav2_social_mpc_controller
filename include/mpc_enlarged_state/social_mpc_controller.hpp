@@ -144,6 +144,18 @@ protected:
   bool transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
                       geometry_msgs::msg::PointStamped& out_point) const;
 
+  /**
+    * @brief Compute a simple fallback command when close to the goal
+    *
+    * @param robot_pose Current robot pose
+    * @param goal_pose Goal pose
+    * @return geometry_msgs::msg::TwistStamped Fallback command
+  */
+  geometry_msgs::msg::TwistStamped computeFallbackCommand(
+      const geometry_msgs::msg::PoseStamped& robot_pose,
+      const geometry_msgs::msg::PoseStamped& goal_pose);
+
+
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string plugin_name_;
   std::unique_ptr<PathTrajectorizer> trajectorizer_;

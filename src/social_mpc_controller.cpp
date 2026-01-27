@@ -191,52 +191,55 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
   people_traj_pub_->publish(ma);
 }
 
+geometry_msgs::msg::TwistStamped MPCEnlargedState::computeFallbackCommand(
+    const geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::PoseStamped& goal_pose)
+{
+  geometry_msgs::msg::TwistStamped fallback_cmd;
+  fallback_cmd.header = robot_pose.header;
+
+  const double dx = goal_pose.pose.position.x - robot_pose.pose.position.x;
+  const double dy = goal_pose.pose.position.y - robot_pose.pose.position.y;
+  const double goal_heading = std::atan2(dy, dx);
+  const double robot_heading = tf2::getYaw(robot_pose.pose.orientation);
+  const double heading_error = angles::shortest_angular_distance(robot_heading, goal_heading);
+
+  // Rotate towards the goal
+  double angular_cmd = fallback_angular_gain_ * heading_error;
+  angular_cmd = std::clamp(angular_cmd, -max_angular_vel_, max_angular_vel_);
+  fallback_cmd.twist.angular.z = angular_cmd;
+
+  // Only drive forward once we're mostly aligned
+  if (std::abs(heading_error) <= fallback_heading_tolerance_)
+  {
+    double dist = hypot(dx, dy);
+    double normalized_dist = 1.0;
+    if (fallback_min_goal_distance_ > 1e-6)
+    {
+      normalized_dist = std::min(dist / fallback_min_goal_distance_, 1.0);
+    }
+    normalized_dist = std::max(normalized_dist, 0.0);
+    double commanded_linear = fallback_linear_vel_ * normalized_dist;
+    commanded_linear = std::clamp(commanded_linear, -max_linear_vel_, max_linear_vel_);
+    if (std::abs(commanded_linear) > 1e-6 && std::abs(commanded_linear) < min_linear_vel_)
+    {
+      commanded_linear = std::copysign(min_linear_vel_, commanded_linear);
+    }
+    fallback_cmd.twist.linear.x = commanded_linear;
+  }
+  else
+  {
+    fallback_cmd.twist.linear.x = 0.0;
+  }
+
+  RCLCPP_DEBUG(logger_, "Fallback control active. dist: %.3f, heading err: %.3f, cmd_linear: %.3f, cmd_angular: %.3f",
+               hypot(dx, dy), heading_error, fallback_cmd.twist.linear.x, fallback_cmd.twist.angular.z);
+  return fallback_cmd;
+}
+
 geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::Twist& speed,
     nav2_core::GoalChecker* goal_checker)
 {
-  auto compute_fallback_command = [&](const geometry_msgs::msg::PoseStamped& goal_pose, double goal_distance) {
-    geometry_msgs::msg::TwistStamped fallback_cmd;
-    fallback_cmd.header = robot_pose.header;
-
-    const double dx = goal_pose.pose.position.x - robot_pose.pose.position.x;
-    const double dy = goal_pose.pose.position.y - robot_pose.pose.position.y;
-    const double goal_heading = std::atan2(dy, dx);
-    const double robot_heading = tf2::getYaw(robot_pose.pose.orientation);
-    const double heading_error = angles::shortest_angular_distance(robot_heading, goal_heading);
-
-    // Rotate towards the goal
-    double angular_cmd = fallback_angular_gain_ * heading_error;
-    angular_cmd = std::clamp(angular_cmd, -max_angular_vel_, max_angular_vel_);
-    fallback_cmd.twist.angular.z = angular_cmd;
-
-    // Only drive forward once we're mostly aligned
-    if (std::abs(heading_error) <= fallback_heading_tolerance_)
-    {
-      double normalized_dist = 1.0;
-      if (fallback_min_goal_distance_ > 1e-6)
-      {
-        normalized_dist = std::min(goal_distance / fallback_min_goal_distance_, 1.0);
-      }
-      normalized_dist = std::max(normalized_dist, 0.0);
-      double commanded_linear = fallback_linear_vel_ * normalized_dist;
-      commanded_linear = std::clamp(commanded_linear, -max_linear_vel_, max_linear_vel_);
-      if (std::abs(commanded_linear) > 1e-6 && std::abs(commanded_linear) < min_linear_vel_)
-      {
-        commanded_linear = std::copysign(min_linear_vel_, commanded_linear);
-      }
-      fallback_cmd.twist.linear.x = commanded_linear;
-    }
-    else
-    {
-      fallback_cmd.twist.linear.x = 0.0;
-    }
-
-    RCLCPP_DEBUG(logger_, "Fallback control active. dist: %.3f, heading err: %.3f, cmd_linear: %.3f, cmd_angular: %.3f",
-                 goal_distance, heading_error, fallback_cmd.twist.linear.x, fallback_cmd.twist.angular.z);
-    return fallback_cmd;
-  };
-
   // Use goal_checker to avoid unused parameter warning
   if (goal_checker == nullptr)
   {
@@ -258,7 +261,7 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     fallback_ = true;
     RCLCPP_WARN(logger_, "Trajectorization failed near goal, engaging fallback behavior. Goal distance: %.3f (threshold %.3f)",
                  goal_distance, fallback_min_goal_distance_);
-    return compute_fallback_command(goal_pose, goal_distance);
+    return computeFallbackCommand(robot_pose, goal_pose);
   }
 
   if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
@@ -312,7 +315,7 @@ geometry_msgs::msg::TwistStamped MPCEnlargedState::computeVelocityCommands(
     {
       RCLCPP_DEBUG(logger_, "Engaging fallback behavior. Goal distance: %.3f (threshold %.3f)", goal_distance,
                    fallback_min_goal_distance_);
-      return compute_fallback_command(goal_pose, goal_distance);
+      return computeFallbackCommand(robot_pose, goal_pose);
     }
   }
 

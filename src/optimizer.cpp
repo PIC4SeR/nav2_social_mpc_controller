@@ -1,5 +1,8 @@
 #include "mpc_sfm_motion_model/optimizer.hpp"
 
+#include <algorithm>
+#include <limits>
+
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include "tf2/utils.h"
@@ -21,12 +24,13 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   std::string trajectorizer = name + std::string(".trajectorizer.");
   std::string local_name = name + std::string(".optimizer.");
   std::string weights = local_name + std::string("weights.");
+  std::string overall_cost = local_name + std::string("critics.");
 
   // Optimizer params
   nav2_util::declare_parameter_if_not_declared(
       node, local_name + "linear_solver_type",
       rclcpp::ParameterValue("SPARSE_NORMAL_CHOLESKY"));  // SPARSE_NORMAL_CHOLESKY
-                                                          // //DENSE_QR
+
   node->get_parameter(local_name + "linear_solver_type", linear_solver_type);
   if (solver_types.find(linear_solver_type) == solver_types.end())
   {
@@ -73,6 +77,21 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(weights + "obstacle_weight", obstacle_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "goal_align_weight", rclcpp::ParameterValue(0.0));
   node->get_parameter(weights + "goal_align_weight", goal_align_w_);
+  nav2_util::declare_parameter_if_not_declared(node, weights + "goal_proximity_weight", rclcpp::ParameterValue(0.0));
+  node->get_parameter(weights + "goal_proximity_weight", goal_proximity_w_);
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "use_adaptive_velocity_cost", rclcpp::ParameterValue(false));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "adaptive_velocity_distance", rclcpp::ParameterValue(1.0));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "adaptive_velocity_min_scale", rclcpp::ParameterValue(0.2));
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_social_work", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_social_work", use_social_work_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_angle", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_angle", use_social_angle_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_proxemics", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_proxemics", use_social_proxemics_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_path_follow", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_path_follow", use_social_path_follow_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_path_align", rclcpp::ParameterValue(true));
+  node->get_parameter(overall_cost + "enable_path_align", use_social_path_align_cost);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "control_horizon", rclcpp::ParameterValue(5));
   node->get_parameter(local_name + "control_horizon", control_horizon_);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "parameter_block_length", rclcpp::ParameterValue(5));
@@ -81,10 +100,40 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(local_name + "current_path_weight", current_path_w);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "current_cmds_weight", rclcpp::ParameterValue(1.0));
   node->get_parameter(local_name + "current_cmds_weight", current_cmds_w);
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "max_agents", rclcpp::ParameterValue(0));
+  node->get_parameter(local_name + "max_agents", max_agents);
   node->get_parameter(trajectorizer + "max_time", max_time);
+
+  nav2_util::declare_parameter_if_not_declared(node, name + ".max_linear_vel", rclcpp::ParameterValue(0.6));
+  nav2_util::declare_parameter_if_not_declared(node, name + ".min_linear_vel", rclcpp::ParameterValue(0.0));
+  nav2_util::declare_parameter_if_not_declared(node, name + ".max_angular_vel", rclcpp::ParameterValue(1.4));
+  nav2_util::declare_parameter_if_not_declared(node, trajectorizer + "desired_linear_vel", rclcpp::ParameterValue(0.3));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "agent_velocity_bound", rclcpp::ParameterValue(1.0));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "stationary_agent_velocity_bound",
+                                               rclcpp::ParameterValue(0.1));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "stationary_agent_speed_threshold",
+                                               rclcpp::ParameterValue(0.01));
+                                               
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "goal_proximity_activation_radius",
+                                               rclcpp::ParameterValue(0.75));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "goal_proximity_decay_distance",
+                                               rclcpp::ParameterValue(0.25));
+  node->get_parameter(name + ".max_linear_vel", max_linear_vel);
+  node->get_parameter(name + ".min_linear_vel", min_linear_vel);
+  node->get_parameter(name + ".max_angular_vel", max_angular_vel);
+  node->get_parameter(trajectorizer + "desired_linear_vel", desired_linear_vel);
+  node->get_parameter(local_name + "agent_velocity_bound", agent_velocity_bound);
+  node->get_parameter(local_name + "stationary_agent_velocity_bound", stationary_agent_velocity_bound);
+  node->get_parameter(local_name + "stationary_agent_speed_threshold", stationary_agent_speed_threshold);
+  node->get_parameter(local_name + "goal_proximity_activation_radius", goal_proximity_activation_radius_);
+  node->get_parameter(local_name + "goal_proximity_decay_distance", goal_proximity_decay_distance_);
+  node->get_parameter(local_name + "use_adaptive_velocity_cost", use_adaptive_velocity_cost);
+  node->get_parameter(local_name + "adaptive_velocity_distance", adaptive_velocity_distance_);
+  node->get_parameter(local_name + "adaptive_velocity_min_scale", adaptive_velocity_min_scale_);
 }
 // constructor and destructor for Optimizer
 Optimizer::Optimizer()
+  : max_agents_(0)
 {
 }
 Optimizer::~Optimizer()
@@ -109,16 +158,35 @@ void Optimizer::initialize(const OptimizerParams params)
   angle_w_ = params.angle_w_;
   agent_angle_w_ = params.agent_angle_w_;
   proxemics_w_ = params.proxemics_w_;
+  goal_proximity_w_ = params.goal_proximity_w_;
+  use_social_work_cost_ = params.use_social_work_cost;
+  use_social_angle_cost_ = params.use_social_angle_cost;
+  use_social_proxemics_cost_ = params.use_social_proxemics_cost;
+  use_social_path_follow_cost_ = params.use_social_path_follow_cost;
+  use_social_path_align_cost_ = params.use_social_path_align_cost;
   control_horizon_ = params.control_horizon_;
   parameter_block_length_ = params.parameter_block_length_;
   max_time = params.max_time;
   current_path_w = params.current_path_w;
   current_cmds_w = params.current_cmds_w;
+  max_agents_ = params.max_agents > 0 ? static_cast<size_t>(params.max_agents) : 0;
   options_.linear_solver_type = params.solver_types.at(params.linear_solver_type);
   options_.max_num_iterations = params.max_iterations;
   options_.function_tolerance = params.fn_tol;
   options_.gradient_tolerance = params.gradient_tol;
   options_.parameter_tolerance = params.param_tol;
+  max_linear_vel_ = params.max_linear_vel;
+  min_linear_vel_ = params.min_linear_vel;
+  max_angular_vel_ = params.max_angular_vel;
+  desired_linear_vel_ = params.desired_linear_vel;
+  goal_proximity_activation_radius_ = params.goal_proximity_activation_radius_;
+  goal_proximity_decay_distance_ = params.goal_proximity_decay_distance_;
+  use_adaptive_velocity_cost_ = params.use_adaptive_velocity_cost;
+  adaptive_velocity_distance_ = params.adaptive_velocity_distance_;
+  adaptive_velocity_min_scale_ = params.adaptive_velocity_min_scale_;
+  agent_velocity_bound_ = params.agent_velocity_bound;
+  stationary_agent_velocity_bound_ = params.stationary_agent_velocity_bound;
+  stationary_agent_speed_threshold_ = params.stationary_agent_speed_threshold;
   if (debug_)
   {
     options_.minimizer_progress_to_stdout = true;
@@ -147,9 +215,9 @@ void Optimizer::initialize(const OptimizerParams params)
  */
 bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj,
                          const nav2_costmap_2d::Costmap2D* costmap,
-                         //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                          std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
-                         const geometry_msgs::msg::Twist& speed, const float time_step)
+                         const geometry_msgs::msg::Twist& speed, const float time_step,
+                         const geometry_msgs::msg::PoseStamped& goal_pose)
 {
   // transfrom people to agent status factor
   AgentsStates init_people = people_to_status(people);
@@ -162,6 +230,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   }
   frame_ = path.header.frame_id;
   path_time_ = rclcpp::Time(path.header.stamp);
+  const geometry_msgs::msg::Pose goal_pose_in = goal_pose.pose;
 
   // Create costmap grid
   costmap_grid_ = std::make_shared<ceres::Grid2D<u_char>>(costmap->getCharMap(), 0, costmap->getSizeInCellsY(), 0,
@@ -178,8 +247,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   {
     memory.previous_path = path;
     memory.previous_cmds = cmds;
-    // Set initial commands
-    // memory.is_initialized = true;
   }
 
   nav_msgs::msg::Path previous_path = memory.previous_path;
@@ -237,7 +304,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                                         optim_positions[optim_status.size() - 1].params[1]);
 
   optim_velocities.pop_back();
-  double desired_linear_vel_ = 0.6;
 
   // setting ceres variables
   ceres::Problem problem;
@@ -363,6 +429,29 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     problem.AddResidualBlock(path_follow_cost_function_f, NULL, parameter_blocks);
     problem.AddResidualBlock(path_align_cost_function_f, NULL, parameter_blocks);
     problem.AddResidualBlock(obs_cost_function_f, NULL, parameter_blocks);
+    if (goal_proximity_w_ > 0.0)
+    {
+      auto* goal_proximity_cost_function_f =
+          GoalProximityCost::Create(goal_proximity_w_, goal_proximity_activation_radius_,
+                                    goal_proximity_decay_distance_, goal_pose_in, evolving_poses[0].pose, i, time_step,
+                                    control_horizon, block_length);
+      if (i < control_horizon)
+      {
+        for (unsigned int j = 0; j <= i / block_length; j++)
+        {
+          goal_proximity_cost_function_f->AddParameterBlock(2);
+        }
+      }
+      else
+      {
+        for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
+        {
+          goal_proximity_cost_function_f->AddParameterBlock(2);
+        }
+      }
+      goal_proximity_cost_function_f->SetNumResiduals(1);
+      problem.AddResidualBlock(goal_proximity_cost_function_f, NULL, parameter_blocks);
+    }
     if (i != 0 && i < control_horizon / block_length)
     {
       auto* velocity_feasibility_cost_function_f =
@@ -374,10 +463,10 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   for (unsigned int i = 0; i < control_horizon / block_length; i++)
   {
-    problem.SetParameterLowerBound(optim_velocities[i].params, 0, 0.0);   // lower bound for linear velocity
-    problem.SetParameterUpperBound(optim_velocities[i].params, 0, 0.6);   // upper bound for linear velocity
-    problem.SetParameterLowerBound(optim_velocities[i].params, 1, -1.4);  // lower bound for angular velocity
-    problem.SetParameterUpperBound(optim_velocities[i].params, 1, 1.4);   // upper bound for angular velocity
+    problem.SetParameterLowerBound(optim_velocities[i].params, 0, min_linear_vel_);   // lower bound for linear velocity
+    problem.SetParameterUpperBound(optim_velocities[i].params, 0, max_linear_vel_);   // upper bound for linear velocity
+    problem.SetParameterLowerBound(optim_velocities[i].params, 1, -max_angular_vel_);  // lower bound for angular velocity
+    problem.SetParameterUpperBound(optim_velocities[i].params, 1, max_angular_vel_);   // upper bound for angular velocity
   }
 
   ceres::Solve(options_, &problem, &summary);
@@ -501,7 +590,6 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
   AgentTrajectory robot_status;
   for (unsigned int i = 0; i < path.poses.size(); i++)
   {
-    // double alpha = 1.0;  // weight for current path; (1-alpha) weight for previous pose
     //  Robot
     //  x, y, yaw, t, lv, av
     AgentStatus r;
@@ -542,7 +630,6 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
           current_cmds_w * cmds[i - 1].twist.linear.x + (1.0 - current_cmds_w) * previous_cmds[i - 1].twist.linear.x;
       cmd_smoothed.twist.angular.z =
           current_cmds_w * cmds[i - 1].twist.angular.z + (1.0 - current_cmds_w) * previous_cmds[i - 1].twist.angular.z;
-      // cmds[i-1] = cmd_smoothed;
       //  Robot vel
       r(4, 0) = cmd_smoothed.twist.linear.x;
       r(5, 0) = cmd_smoothed.twist.angular.z;
@@ -553,124 +640,10 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
 }
 
 // we project the people state for each time step of the robot path
-AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people
-                                             //const AgentTrajectory& robot_path,
-                                             //const obstacle_distance_msgs::msg::ObstacleDistance& od,
-                                             //const float& maxtime, const float& timestep
-                                             )
+AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people)
 {
-  //float naive_goal_time = maxtime;  // secs
-  // double people_desired_vel = 1.0;
   AgentsTrajectories people_traj;
   people_traj.push_back(init_people);
-
-  //// I NEED TO ADD THE CLOSER OBSTACLE POSITION TO EACH AGENT
-  //// FOR EACH STEP. THAT OBSTACLE POSITION MUST BE IN THE
-  //// SAME COORDINATE FRAME THAT THE AGENT POSITION.
-//
-  //std::vector<sfm_controller::Agent> agents;
-//
-  //// transform people to sfm agents
-  //for (unsigned int i = 0; i < init_people.size(); i++)
-  //{
-  //  // if person not valid, skip it
-  //  if (init_people[i][3] == -1)
-  //    continue;
-//
-  //  sfm_controller::Agent a;
-  //  a.id = i + 1;
-  //  a.position << init_people[i][0], init_people[i][1];
-  //  a.yaw = init_people[i][2];
-  //  a.linearVelocity = init_people[i][4];
-  //  a.angularVelocity = init_people[i][5];
-//
-  //  a.velocity << a.linearVelocity * cos(a.yaw), a.linearVelocity * sin(a.yaw);
-  //  a.desiredVelocity = 0.5;  // people_desired_vel; // could be
-  //                            // computed somehow???
-  //  a.radius = 0.5;
-  //  // compute goal with the Constant Velocity Model
-  //  sfm_controller::Goal g;
-  //  g.radius = 0.25;
-  //  Eigen::Vector2d gpos = a.position + naive_goal_time * a.velocity;
-  //  g.center = gpos;
-  //  a.goals.push_back(g);
-  //  // Fill the obstacles
-//
-  //  // check if the obstacle distance message is valid
-  //  // if the map has 100x100 cells
-  //  // TODO use the costmap to compute the obstacles
-  //  if (od.info.width == 100 && od.info.height == 100)
-  //  {
-  //    RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
-  //                       "ObstacleDistance grid is NOT  valid with size: " << od.info.width << "x" << od.info.height);
-  //    continue;
-  //  }
-//
-  //  a.obstacles1.push_back(computeObstacle(a.position, od));
-  //  agents.push_back(a);
-  //}
-//
-  //// compute for each robot state of the path
-  //for (unsigned int i = 0; i < robot_path.size() - 1; i++)
-  //{
-  //  // robot as sfm agent
-  //  sfm_controller::Agent sfmrobot;
-  //  sfmrobot.desiredVelocity = 0.6;
-  //  sfmrobot.radius = 0.5;
-  //  sfmrobot.id = 0;
-  //  sfmrobot.position << robot_path[i][0], robot_path[i][1];
-  //  sfmrobot.yaw = robot_path[i][2];
-  //  sfmrobot.linearVelocity = robot_path[i][4];
-  //  sfmrobot.angularVelocity = robot_path[i][5];
-  //  // vx = linearVelocity * cos(yaw), vy = linearVelocity * sin(yaw)
-  //  sfmrobot.velocity << sfmrobot.linearVelocity * cos(sfmrobot.yaw), sfmrobot.linearVelocity * sin(sfmrobot.yaw);
-  //  sfm_controller::Goal g;
-  //  g.radius = 0.25;
-  //  Eigen::Vector2d gpos(robot_path.back()[0], robot_path.back()[1]);
-  //  g.center = gpos;
-  //  sfmrobot.goals.push_back(g);
-//
-  //  // add the robot to the agents
-  //  agents.push_back(sfmrobot);
-//
-  //  // Compute Social Forces
-  //  sfm_controller::SFM.computeForces(agents);
-  //  // Project the people movement according to the SFM
-  //  sfm_controller::SFM.updatePosition(agents, timestep);
-//
-  //  // remove the robot (last agent)
-  //  agents.pop_back();
-//
-  //  // update agents obstacles
-  //  for (unsigned int j = 0; j < agents.size(); j++)
-  //  {
-  //    agents[j].obstacles1.clear();
-  //    agents[j].obstacles1.push_back(computeObstacle(agents[j].position, od));
-  //  }
-//
-  //  // Take the people agents
-  //  AgentsStates humans;
-  //  for (auto p : agents)
-  //  {
-  //    AgentStatus as;
-  //    as(0, 0) = p.position[0];
-  //    as(1, 0) = p.position[1];
-  //    as(2, 0) = p.yaw;
-  //    as(3, 0) = (i + 1) * timestep;
-  //    as(4, 0) = p.linearVelocity;
-  //    as(5, 0) = p.angularVelocity;
-  //    humans.push_back(as);
-  //  }
-  //  // fill with empty agents if needed
-  //  while (humans.size() < init_people.size())
-  //  {
-  //    AgentStatus ag;
-  //    ag.setZero();
-  //    ag(3, 0) = -1.0;
-  //    humans.push_back(ag);
-  //  }
-  //  people_traj.push_back(humans);
-  //}
   return people_traj;
 }
 

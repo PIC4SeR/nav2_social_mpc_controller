@@ -48,7 +48,6 @@ int main(int argc, char * argv[])
 
   smoother_->activate();
 
-  node_lifecycle_->set_parameter(rclcpp::Parameter("PathTrajectorizer.omnidirectional", false));
   node_lifecycle_->set_parameter(rclcpp::Parameter("PathTrajectorizer.desired_linear_vel", 0.4));
   node_lifecycle_->set_parameter(rclcpp::Parameter("PathTrajectorizer.lookahead_dist", 0.4));
   node_lifecycle_->set_parameter(rclcpp::Parameter("PathTrajectorizer.max_angular_vel", 1.0));

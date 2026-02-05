@@ -20,6 +20,7 @@
 #include <string>
 
 #include "angles/angles.h"
+#include "tf2/utils.h"
 #include "nav2_core/exceptions.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
@@ -33,14 +34,6 @@ using std::max;
 using std::min;
 using namespace nav2_costmap_2d;  // NOLINT
 
-double clamp(double value, double min, double max)
-{
-  if (value < min)
-    return min;
-  if (value > max)
-    return max;
-  return value;
-}
 
 namespace mpc_sfm_motion_model
 {
@@ -56,13 +49,23 @@ void MPCSFMMotionModel::configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr
   plugin_name_ = name;
   logger_ = node->get_logger();
   double transform_tolerance;
-  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.5));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".fov_angle", rclcpp::ParameterValue(M_PI / 4));
+  
+  // Declare the parameters
   declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
-  node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_robot_pose_search_dist",
+                                    rclcpp::ParameterValue(4.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_linear_vel", rclcpp::ParameterValue(0.6));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".min_linear_vel", rclcpp::ParameterValue(0.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_angular_vel", rclcpp::ParameterValue(1.4));
+  
+  // Get the parameters
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
+  node->get_parameter(plugin_name_ + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
+  node->get_parameter(plugin_name_ + ".max_linear_vel", max_linear_vel_);
+  node->get_parameter(plugin_name_ + ".min_linear_vel", min_linear_vel_);
+  node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
+  
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
-  node->get_parameter(plugin_name_ + ".fov_angle", fov_angle_);
   // Create the trajectorizer
   trajectorizer_ = std::make_unique<PathTrajectorizer>();
   trajectorizer_->configure(node, name, tf_);
@@ -119,6 +122,15 @@ void MPCSFMMotionModel::deactivate()
 
 void MPCSFMMotionModel::publish_people_traj(const AgentsTrajectories& people, const std_msgs::msg::Header& header)
 {
+  if (people.empty())
+  {
+    return;
+  }
+  // Ensure at least one agent list exists before indexing
+  if (people[0].empty())
+  {
+    return;
+  }
   // Create one marker for each person
   size_t npeople = people[0].size();
   visualization_msgs::msg::MarkerArray ma;
@@ -131,7 +143,7 @@ void MPCSFMMotionModel::publish_people_traj(const AgentsTrajectories& people, co
       m.type = m.LINE_STRIP;
       m.id = idx;
       m.action = m.ADD;
-      m.scale.x = 0.5;
+      m.scale.x = 0.05;
       m.color.a = 1.0;
       m.color.r = 1.0;
       m.color.g = 0.0;
@@ -143,10 +155,19 @@ void MPCSFMMotionModel::publish_people_traj(const AgentsTrajectories& people, co
   for (unsigned int stepi = 0; stepi < people.size(); stepi++)
   {
     int mi = 0;
+    if (people[stepi].empty())
+    {
+      continue;
+    }
     for (unsigned int personi = 0; personi < people[stepi].size(); personi++)
     {
       if (people[stepi][personi][3] != -1.0)
       {
+        if (mi >= static_cast<int>(ma.markers.size()))
+        {
+          // No pre-created marker for this index; skip to avoid out-of-range access
+          continue;
+        }
         geometry_msgs::msg::Point point;
         point.x = people[stepi][personi][0];
         point.y = people[stepi][personi][1];
@@ -169,55 +190,39 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
     RCLCPP_WARN(logger_, "Goal checker is null");
   }
   nav_msgs::msg::Path transformed_plan =
-      path_handler_->transformGlobalPlan(robot_pose, 4.0);  // TODO: make this a parameter
-  auto goal = path_handler_->getTransformedGoal(2.5, transformed_plan, robot_pose);
+      path_handler_->transformGlobalPlan(robot_pose, max_robot_pose_search_dist_);
 
   // Trajectorize the path
+  if (transformed_plan.poses.empty())
+  {
+    RCLCPP_ERROR(logger_, "Transformed plan is empty, cannot compute velocity commands");
+    geometry_msgs::msg::TwistStamped zero_vel;
+    zero_vel.header = robot_pose.header;
+    return zero_vel;
+  }
+
+  geometry_msgs::msg::PoseStamped global_goal_pose = transformed_plan.poses.back();
   nav_msgs::msg::Path traj_path = transformed_plan;
   std::vector<geometry_msgs::msg::TwistStamped> cmds;
-  // trajectorizer_->trajectorize(traj_path, robot_pose, cmds);
 
-  if (!trajectorizer_->trajectorize(traj_path, robot_pose, cmds))
+  if (!trajectorizer_->trajectorize(traj_path, robot_pose, speed, cmds, goal_checker))
   {
-    geometry_msgs::msg::TwistStamped cmd_vel;
-    cmd_vel.header = robot_pose.header;
-    cmd_vel.twist.linear.x = 0.1;  // Use the desired speed as a fallback
-    cmd_vel.twist.linear.y = 0.0;
-    cmd_vel.twist.angular.z = 0.0;  // No angular velocity
-    RCLCPP_WARN(logger_, "Approaching goal without a valid trajectory, using fallback cmd_vel");
-    return cmd_vel;
+    RCLCPP_ERROR(logger_, "Trajectorization of the path failed returning zero velocity");
+    geometry_msgs::msg::TwistStamped zero_vel;
+    zero_vel.header = robot_pose.header;
+    return zero_vel;
   }
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
-  // float goal_distance = euclidean_distance(goal.point, robot_pose.pose.position);
 
   // Be careful, path and people must be in the same frame
-  people_msgs::msg::People people_unf = people_interface_->getPeople();
+  people_msgs::msg::People raw_people = people_interface_->getPeople();
   people_msgs::msg::People people;
-
-  // only use people in the FOV of the robot, in this case (-90°,90° supposed )
-  for (auto p : people_unf.people)
-  {
-    uint mx, my;
-    if (!costmap_->worldToMap(p.position.x, p.position.y, mx, my))
-    {
-      RCLCPP_DEBUG(logger_, "Person %s is not in the costmap", p.name.c_str());
-      continue;
-    }
-    float angle_to_person = atan2(p.position.y - robot_pose.pose.position.y, p.position.x - robot_pose.pose.position.x);
-    float robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
-    float relative_angle = angles::shortest_angular_distance(robot_yaw, angle_to_person);
-    if (fabs(relative_angle) < fov_angle_)
-    {
-      people.people.push_back(p);
-    }
-    // Filter people based on the FOV of the robot
-  }
-  people.header.frame_id = people_unf.header.frame_id;
+  people.header = raw_people.header;
 
   if (people.header.frame_id != transformed_plan.header.frame_id)
   {
     // transform people to the global frame
-    for (auto p : people.people)
+    for (auto& p : people.people)
     {
       geometry_msgs::msg::PointStamped out_point;
       geometry_msgs::msg::PointStamped in_point;
@@ -229,17 +234,13 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
       }
       p.position = out_point.point;
     }
+    people.header.frame_id = transformed_plan.header.frame_id;
   }
-
-  // Get the distance transform
-  //obstacle_distance_msgs::msg::ObstacleDistance transformed_od = obsdist_interface_->getDistanceTransform();
 
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
 
-  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,
-                                        //transformed_od,
-                                        cmds, people, speed, ts);
+  bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,cmds, people, speed, ts, global_goal_pose);
   if (!optimized)
   {
     RCLCPP_WARN(logger_, "Optimization failed, using initial commands");
@@ -248,12 +249,25 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
   publish_people_traj(projected_people, transformed_plan.header);
   local_path_pub_->publish(traj_path);
 
+  if (cmds.empty())
+  {
+    RCLCPP_WARN(logger_, "Trajectorizer provided no commands, sending zero velocity");
+    geometry_msgs::msg::TwistStamped zero_vel;
+    zero_vel.header = robot_pose.header;
+    return zero_vel;
+  }
+
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = cmds[0].header;
-  cmd_vel.twist.linear.x = cmds[0].twist.linear.x;
-  cmd_vel.twist.linear.y = 0;
-  cmd_vel.twist.angular.z = cmds[0].twist.angular.z;
+  double linear_cmd = std::clamp(cmds[0].twist.linear.x, -max_linear_vel_, max_linear_vel_);
+  if (std::abs(linear_cmd) > 1e-6 && std::abs(linear_cmd) < min_linear_vel_)
+  {
+    linear_cmd = std::copysign(min_linear_vel_, linear_cmd);
+  }
+  double angular_cmd = std::clamp(cmds[0].twist.angular.z, -max_angular_vel_, max_angular_vel_);
+  cmd_vel.twist.linear.x = linear_cmd;
+  cmd_vel.twist.angular.z = angular_cmd;
   RCLCPP_DEBUG(logger_, "cmd_vel: %f, %f", cmd_vel.twist.linear.x, cmd_vel.twist.angular.z);
   return cmd_vel;
 }
@@ -267,20 +281,17 @@ void MPCSFMMotionModel::setSpeedLimit(const double& speed_limit, const bool& per
 {
   double speed_limit_ = speed_limit;
   bool percentage_ = percentage;
-  speed_limit_ = 0;
-  percentage_ = false;
   double throwaway_vel = 1;
-  // RCLCPP_DEBUG(logger_, "Setting speed limit to %f, percentage %", speed_limit_);
   if (percentage_)
   {
     throwaway_vel *= (speed_limit_ / 100.0);
     RCLCPP_DEBUG(logger_, "Speed limit set as percentage: %f%%, resulting speed: %f", speed_limit_,
-                 desired_linear_vel_);
+                  throwaway_vel);
   }
   else
   {
     throwaway_vel = speed_limit_;
-    RCLCPP_DEBUG(logger_, "Speed limit set as absolute value: %f", desired_linear_vel_);
+    RCLCPP_DEBUG(logger_, "Speed limit set as absolute value: %f", throwaway_vel);
   }
 }
 

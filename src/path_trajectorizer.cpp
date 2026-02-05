@@ -13,22 +13,23 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-// #include "nav2_core/exceptions.hpp"
-// #include "nav2_costmap_2d/costmap_filters/filter_values.hpp"
 #include "mpc_sfm_motion_model/path_trajectorizer.hpp"
+#include "nav2_core/goal_checker.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
 #include "tf2/utils.h"
 #include "angles/angles.h"
+#include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
 using nav2_util::declare_parameter_if_not_declared;
-// using nav2_util::geometry_utils::euclidean_distance;
-// using namespace nav2_costmap_2d; // NOLINT
 
 namespace mpc_sfm_motion_model
 {
@@ -40,6 +41,60 @@ PathTrajectorizer::~PathTrajectorizer()
 {
 }
 
+int PathTrajectorizer::findWaypointIndex(const nav_msgs::msg::Path& path, double rx, double ry, double target_dist) const
+{
+  if (path.poses.empty())
+  {
+    return 0;
+  }
+
+  double min_dist = std::numeric_limits<double>::max();
+  int wp_index = static_cast<int>(path.poses.size() - 1);
+  for (std::size_t idx = path.poses.size(); idx-- > 0;)
+  {
+    const auto& pose = path.poses[idx].pose;
+    const double dx = pose.position.x - rx;
+    const double dy = pose.position.y - ry;
+    const double dist = std::hypot(dx, dy);
+    if (dist <= target_dist)
+    {
+      wp_index = static_cast<int>(idx);
+      break;
+    }
+    if (dist < min_dist)
+    {
+      min_dist = dist;
+      wp_index = static_cast<int>(idx);
+    }
+  }
+
+  return wp_index;
+}
+
+rclcpp::Time PathTrajectorizer::applyMotionModel(geometry_msgs::msg::PoseStamped& current_rp,
+                                                 const geometry_msgs::msg::Twist& cmd,
+                                                 const geometry_msgs::msg::Twist& prev_cmd,
+                                                 geometry_msgs::msg::Twist& applied_cmd
+                                                 ) const
+{
+  if (!motion_model_)
+  {
+    RCLCPP_ERROR(logger_, "Motion model not initialized!");
+    throw std::runtime_error("Motion model not initialized");
+  }
+  nav_msgs::msg::Odometry current_state;
+  current_state.header = current_rp.header;
+  current_state.pose.pose = current_rp.pose;
+  current_state.twist.twist = prev_cmd;
+  nav_msgs::msg::Odometry new_state = motion_model_->integrate(current_state, cmd, time_step_);
+  // update robot pose
+  current_rp.pose = new_state.pose.pose;
+  applied_cmd = new_state.twist.twist;
+  current_rp.header = new_state.header;
+
+  return rclcpp::Time(new_state.header.stamp);
+}
+
 void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr parent, std::string name,
                                   std::shared_ptr<tf2_ros::Buffer> tf)
 {
@@ -49,33 +104,95 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
   plugin_name_ = name + ".trajectorizer";
   logger_ = node->get_logger();
 
-  declare_parameter_if_not_declared(node, plugin_name_ + ".omnidirectional", rclcpp::ParameterValue(false));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.4));
   declare_parameter_if_not_declared(node, plugin_name_ + ".lookahead_dist", rclcpp::ParameterValue(0.4));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".max_angular_vel", rclcpp::ParameterValue(1.0));
-  declare_parameter_if_not_declared(node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(node, plugin_name_ + ".base_frame", rclcpp::ParameterValue("base_footprint"));
   declare_parameter_if_not_declared(node, plugin_name_ + ".time_step", rclcpp::ParameterValue(0.05));
   declare_parameter_if_not_declared(node, plugin_name_ + ".max_time", rclcpp::ParameterValue(3.0));
-
-  node->get_parameter(plugin_name_ + ".omnidirectional", omnidirectional_);
+  declare_parameter_if_not_declared(node, plugin_name_ + ".desired_linear_vel", rclcpp::ParameterValue(0.2));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".waypoint_dist_tol", rclcpp::ParameterValue(0.2));
+  declare_parameter_if_not_declared(node, name + ".max_angular_vel", rclcpp::ParameterValue(1.4));
+  declare_parameter_if_not_declared(node, name + ".max_linear_vel", rclcpp::ParameterValue(0.8));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_linear_accel", rclcpp::ParameterValue(2.5));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_angular_accel", rclcpp::ParameterValue(3.2));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".min_approach_linear_velocity", rclcpp::ParameterValue(0.05));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".motion_model_type", rclcpp::ParameterValue(std::string("unicycle")));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".allow_reverse", rclcpp::ParameterValue(false));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".reverse_heading_threshold", rclcpp::ParameterValue(M_PI_2));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_reverse_speed", rclcpp::ParameterValue(0.3));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".use_interpolation", rclcpp::ParameterValue(false));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".use_rotate_to_heading", rclcpp::ParameterValue(true));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".rotate_to_heading_angular_vel", rclcpp::ParameterValue(0.75));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".rotate_to_heading_min_angle", rclcpp::ParameterValue(1.0));
+  
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
-  node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
+  node->get_parameter(name + ".max_angular_vel", max_angular_vel_);
+  node->get_parameter(name + ".max_linear_vel", max_linear_vel_);
   node->get_parameter(plugin_name_ + ".base_frame", base_frame_);
   node->get_parameter(plugin_name_ + ".time_step", time_step_);
+  node->get_parameter(plugin_name_ + ".waypoint_dist_tol", waypoint_dist_tol_);
+  node->get_parameter(plugin_name_ + ".max_linear_accel", max_linear_accel_);
+  node->get_parameter(plugin_name_ + ".max_angular_accel", max_angular_accel_);
+  node->get_parameter(plugin_name_ + ".allow_reverse", allow_reverse_);
+  node->get_parameter(plugin_name_ + ".reverse_heading_threshold", reverse_heading_threshold_);
+  node->get_parameter(plugin_name_ + ".max_reverse_speed", max_reverse_speed_);
+  node->get_parameter(plugin_name_ + ".min_approach_linear_velocity", min_approach_linear_velocity_);
+  node->get_parameter(plugin_name_ + ".use_interpolation", use_interpolation_);
+  node->get_parameter(plugin_name_ + ".use_rotate_to_heading", use_rotate_to_heading_);
+  node->get_parameter(plugin_name_ + ".rotate_to_heading_angular_vel", rotate_to_heading_angular_vel_);
+  node->get_parameter(plugin_name_ + ".rotate_to_heading_min_angle", rotate_to_heading_min_angle_);
+  std::string motion_model_type;
+  node->get_parameter(plugin_name_ + ".motion_model_type", motion_model_type);
+
+  max_linear_accel_ = std::max(0.0, max_linear_accel_);
+  max_angular_accel_ = std::max(0.0, max_angular_accel_);
+  reverse_heading_threshold_ = std::clamp(reverse_heading_threshold_, 0.0, M_PI);
+  max_reverse_speed_ = std::clamp(std::abs(max_reverse_speed_), 0.0, desired_linear_vel_);
+  min_approach_linear_velocity_ = std::max(0.0, min_approach_linear_velocity_);
+  have_last_cmd_ = false;
+  last_cmd_ = geometry_msgs::msg::Twist();
+
+  RegulatedPurePursuit::Params pursuit_params;
+  pursuit_params.goal_dist_tol = waypoint_dist_tol_;
+  pursuit_params.rotate_to_heading_angular_vel = rotate_to_heading_angular_vel_;
+  pursuit_params.rotate_to_heading_min_angle = rotate_to_heading_min_angle_;
+  pursuit_params.time_step = time_step_;
+  pursuit_params.max_angular_accel = max_angular_accel_;
+  pursuit_params.min_approach_linear_velocity = min_approach_linear_velocity_;
+  pursuit_params.use_rotate_to_heading = use_rotate_to_heading_;
+  pursuit_params.use_interpolation = use_interpolation_;
+  pursuit_params.desired_linear_velocity_ = desired_linear_vel_;
+  pure_pursuit_.updateParams(pursuit_params);
+
+  // Choose motion model plugin
+  MotionModel::Limits limits{ max_linear_accel_, max_angular_accel_, max_linear_vel_, max_angular_vel_};
+  if (motion_model_type == "unicycle")
+  {
+    motion_model_ = std::make_unique<UnicycleMotionModel>(limits);
+    RCLCPP_INFO(logger_, "Motion model set to unicycle");
+  }
+  else
+  {
+    motion_model_ = std::make_unique<HolonomicMotionModel>(limits);
+    if (motion_model_type != "holonomic")
+    {
+      RCLCPP_WARN(logger_, "Unknown motion_model_type '%s', defaulting to holonomic", motion_model_type.c_str());
+    }
+    else
+    {
+      RCLCPP_INFO(logger_, "Motion model set to holonomic");
+    }
+  }
+
   double max_time;
   node->get_parameter(plugin_name_ + ".max_time", max_time);
-  double transform_tolerance;
-  node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
-  transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
 
   RCLCPP_DEBUG(logger_, "-------------------------------------");
   RCLCPP_DEBUG(logger_, "Path Trajectorizer params:");
-  RCLCPP_DEBUG(logger_, "omnidirectional: %i", (int)omnidirectional_);
   RCLCPP_DEBUG(logger_, "desired_linear_vel: %.2f m/s", desired_linear_vel_);
   RCLCPP_DEBUG(logger_, "lookahead_dist: %.2f m", lookahead_dist_);
   RCLCPP_DEBUG(logger_, "max_angular_vel: %.2f rad/s", max_angular_vel_);
+  RCLCPP_DEBUG(logger_, "max_linear_vel: %.2f m/s", max_linear_vel_);
   RCLCPP_DEBUG(logger_, "time_step: %.2f secs", time_step_);
   RCLCPP_DEBUG(logger_, "max_time: %.2f secs", max_time);
   RCLCPP_DEBUG(logger_, "base_frame: %s", base_frame_.c_str());
@@ -85,6 +202,8 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
 
   received_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
   computed_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("trajectorized_global_plan", 1);
+  lookahead_marker_pub_ =
+      node->create_publisher<visualization_msgs::msg::MarkerArray>("lookahead_points", 1);
 }
 
 void PathTrajectorizer::cleanup()
@@ -95,6 +214,8 @@ void PathTrajectorizer::cleanup()
               plugin_name_.c_str());
   received_path_pub_.reset();
   computed_path_pub_.reset();
+  lookahead_marker_pub_.reset();
+  resetLastCommand();
 }
 
 void PathTrajectorizer::activate()
@@ -105,6 +226,9 @@ void PathTrajectorizer::activate()
               plugin_name_.c_str());
   received_path_pub_->on_activate();
   computed_path_pub_->on_activate();
+  if (lookahead_marker_pub_) {
+    lookahead_marker_pub_->on_activate();
+  }
 }
 
 void PathTrajectorizer::deactivate()
@@ -115,165 +239,139 @@ void PathTrajectorizer::deactivate()
               plugin_name_.c_str());
   received_path_pub_->on_deactivate();
   computed_path_pub_->on_deactivate();
+  if (lookahead_marker_pub_) {
+    lookahead_marker_pub_->on_deactivate();
+  }
+  resetLastCommand();
 }
 
-bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_msgs::msg::PoseStamped& path_robot_pose,
-                                     std::vector<geometry_msgs::msg::TwistStamped>& cmds)
+bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path,
+  const geometry_msgs::msg::PoseStamped& path_robot_pose, const geometry_msgs::msg::Twist& speed,
+  std::vector<geometry_msgs::msg::TwistStamped>& cmds, nav2_core::GoalChecker* goal_checker)
 {
-  if (path.poses.size() < 2)
+  if (path.poses.empty())
   {
-    RCLCPP_WARN(logger_, "Path has less than 2 poses, cannot trajectorize");
+    RCLCPP_WARN(logger_, "Received empty path, cannot trajectorize");
     return false;
   }
-  rclcpp::Time t = clock_->now();
-  nav_msgs::msg::Path new_path;
-  new_path.header.frame_id = path.header.frame_id;
-  new_path.header.stamp = t;
 
   // path_robot_pose must be in the same frame as the path
-  geometry_msgs::msg::PoseStamped robot_pose = path_robot_pose;
-  new_path.poses.push_back(robot_pose);
+  geometry_msgs::msg::PoseStamped current_rp = path_robot_pose; // to store the current robot pose in the path frame
+  geometry_msgs::msg::Twist previous_cmd = speed;
 
-  double rx = robot_pose.pose.position.x;
-  double ry = robot_pose.pose.position.y;
-  double rtheta = tf2::getYaw(robot_pose.pose.orientation);
+  
+  nav_msgs::msg::Path new_path;
+  new_path.header.frame_id = path.header.frame_id;
+  new_path.header.stamp = current_rp.header.stamp;
+  new_path.poses.push_back(current_rp);
+  std::vector<geometry_msgs::msg::Point> lookahead_points;
+  
+  cmds.clear();
+  cmds.reserve(max_steps_);
+  lookahead_points.reserve( max_steps_);
 
-  // Now, do a loop:
-  // 1- Find the look-ahead point on the path.
-  // 2- Find the cmds to approach the point
-  // 3- simulate the robot movement by applying
-  // those cmds for a small time step.
-  // 4- Repeat steps 1 and 2 for the new simulated robot pose until
-  // reaching the end of the path
+  // --- Main trajectorization loop ---
 
-  double goal_dist = 1000.0;
-  double goal_dist_threshold = 0.2;
-  int steps = 0;
-  while (goal_dist > goal_dist_threshold && steps < max_steps_)
+  double goal_tolerance = waypoint_dist_tol_;
+  if (goal_checker != nullptr)
   {
-    double wpx;
-    double wpy;
-    double min_dist = 100.0;
-    int wp_index = -1;
-    double wp_dist = 1000.0;
-    // --- 1 ---
-    for (int i = path.poses.size() - 1; i >= 0; i--)
+    geometry_msgs::msg::Pose pose_tolerance;
+    geometry_msgs::msg::Twist velocity_tolerance;
+    goal_checker->getTolerances(pose_tolerance, velocity_tolerance);
+    const double checker_tol = pose_tolerance.position.x;
+    if (std::isfinite(checker_tol) && checker_tol > 0.0)
     {
-      wpx = path.poses[i].pose.position.x;
-      wpy = path.poses[i].pose.position.y;
-      wp_dist = sqrt((rx - wpx) * (rx - wpx) + (ry - wpy) * (ry - wpy));
-      if (wp_dist <= lookahead_dist_)
-      {
-        wp_index = i;
-        break;
-      }
-      if (wp_dist < min_dist)
-      {
-        min_dist = wp_dist;
-        wp_index = i;
-      }
+      goal_tolerance = checker_tol;
     }
+  }
 
-    wpx = path.poses[wp_index].pose.position.x;
-    wpy = path.poses[wp_index].pose.position.y;
+  RCLCPP_DEBUG(logger_, "Goal tolerance for trajectorization: %.3f m", goal_tolerance);
 
+  // --- 1 --- The goal is the last point in the path
+  
+  auto goal_distance = nav2_util::geometry_utils::euclidean_distance(
+    current_rp, path.poses.back());
+  // goal_dist is updated inside the loop
+  for (size_t step = 0; step < max_steps_ && goal_distance > goal_tolerance; ++step)
+  {
+    
+    // --- Find the look-ahead point ---
+    geometry_msgs::msg::PoseStamped lookahead_pose = pure_pursuit_.getLookAheadPoint(
+      lookahead_dist_, path, current_rp);
+      lookahead_points.push_back(lookahead_pose.pose.position);
+      
+    double & wpx = lookahead_pose.pose.position.x;
+    double & wpy = lookahead_pose.pose.position.y;
+    
+  
+    double & curr_rx = current_rp.pose.position.x;
+    double & curr_ry = current_rp.pose.position.y;
+    double curr_rtheta = tf2::getYaw(current_rp.pose.orientation);
     // --- 2 ---
     // Transform way-point into local robot frame and get desired x,y,theta
-    double dx = (wpx - rx) * cos(rtheta) + (wpy - ry) * sin(rtheta);
-    double dy = -(wpx - rx) * sin(rtheta) + (wpy - ry) * cos(rtheta);
-    double dtheta = atan2(dy, dx);
-    dtheta = angles::normalize_angle(dtheta);  // it should be not necessary since atan2 is already normalized
-    double vx = 0.0;
-    double vy = 0.0;
-    double wz = 0.0;
-    // todo use different models for omnidirectional and non-omnidirectional robots
-    if (omnidirectional_)
+    double dx = (wpx - curr_rx) * cos(curr_rtheta) + (wpy - curr_ry) * sin(curr_rtheta);
+    double dy = -(wpx - curr_rx) * sin(curr_rtheta) + (wpy - curr_ry) * cos(curr_rtheta);
+    double curvature = 0.0;
+    double wp_dist2 = (dx * dx + dy * dy);
+
+    if (wp_dist2 > 1e-3)
     {
-      vx = desired_linear_vel_ * cos(dtheta);
-      vy = desired_linear_vel_ * sin(dtheta);
+      curvature = 2.0 * dy / (wp_dist2);
     }
-    else  // non-omnidirectional robot (use different control laws to implement the reference trajectory)
+
+    
+    double sign = 1.0;
+    if (allow_reverse_)
     {
-      double point_dist2 = (dx * dx + dy * dy);
-      double curvature = 0.0;
-      if (point_dist2 > 0.001)
-      {
-        curvature = 2.0 * dy / point_dist2;
-      }
-      // Setting the velocity direction
-      // double sign = 1.0;
-      // if (allow_reversing_) {
-      //   sign = dx >= 0.0 ? 1.0 : -1.0;
-      // }
-      vx = desired_linear_vel_;
+      sign = dx >= 0.0 ? 1.0 : -1.0;
+    }
 
-      // Make sure we're in compliance with basic constraints
-      // double angle_to_heading;
+    double linear_vel = desired_linear_vel_;
+    double angular_vel = 0.0;
+    // Make sure we're in compliance with basic constraints
+    
+    double angle_to_heading;
+    if (pure_pursuit_.shouldRotateToGoalHeading(current_rp, lookahead_pose)) {
+      double angle_to_goal = tf2::getYaw(path.poses.back().pose.orientation) - curr_rtheta;
+      pure_pursuit_.rotateToHeading(linear_vel, angular_vel, angle_to_goal, speed);
+    } else if (pure_pursuit_.shouldRotateToPath(current_rp, lookahead_pose, angle_to_heading)) {
+      pure_pursuit_.rotateToHeading(linear_vel, angular_vel, angle_to_heading, speed);
+    } else {
+      pure_pursuit_.applyConstraints(
+        curvature, speed,
+        path, current_rp,
+        linear_vel, sign);
 
-      // if the angle to the path is too large, rotate in place
-      if (fabs(dtheta) > M_PI / 2.0)
-      {
-        // rotate in place
-        vx = 0.0;
-        wz = max_angular_vel_ * (dtheta > 0 ? 1.0 : -1.0);
-      }
-      else
-      {
-        // apply curvature to angular velocity
-        wz = vx * curvature;
-      }
-
-      // if (dx > 0)
-      // {
-      //   vx = desired_linear_vel_ * (0.1 + exp(-fabs(dtheta)));  // desired_linear_vel_;
-      //   if (vx > desired_linear_vel_)
-      //     vx = desired_linear_vel_;
-      //   // wz = max_angular_vel_ * dtheta;
-      //   auto curvature = 2.0 * dy / (dx * dx + dy * dy);
-      //   wz = desired_linear_vel_ * curvature;
-      // }
-      // else
-      // {
-      //   vx = 0.0;
-      //   wz = max_angular_vel_;
-      //   if (dtheta < 0.0)
-      //     wz = -max_angular_vel_;
-      // }
+      // Apply curvature to angular velocity after constraining linear velocity
+      angular_vel = linear_vel * curvature;
     }
 
     // --- 3 ---
+    geometry_msgs::msg::Twist desired_cmd;
+    desired_cmd.linear.x = linear_vel;
+    desired_cmd.linear.y = 0.0;
+    desired_cmd.angular.z = angular_vel;
+    geometry_msgs::msg::Twist applied_cmd;
+    
+    rclcpp::Time curr_t = applyMotionModel(
+      current_rp,
+      desired_cmd,
+      previous_cmd,
+      applied_cmd);
+    previous_cmd = applied_cmd;
+    new_path.poses.push_back(current_rp);
 
-    // todo: use a motion model to compute the trajectory
-    rx = computeNewXPosition(rx, vx, vy, rtheta, time_step_);
-    ry = computeNewYPosition(ry, vx, vy, rtheta, time_step_);
-    rtheta = computeNewThetaPosition(rtheta, wz, time_step_);
-    // store the point
-    robot_pose.pose.position.x = rx;
-    robot_pose.pose.position.y = ry;
-    tf2::Quaternion myQuaternion;
-    myQuaternion.setRPY(0, 0, rtheta);
-    robot_pose.pose.orientation = tf2::toMsg(myQuaternion);
-    rclcpp::Time curr_t = rclcpp::Time(robot_pose.header.stamp);
-    rclcpp::Time time = curr_t + rclcpp::Duration(time_step_, 0);
-    robot_pose.header.stamp = time;
-    new_path.poses.push_back(robot_pose);
-
-    // cmd vel
     geometry_msgs::msg::TwistStamped vel;
     vel.header.frame_id = base_frame_;
     vel.header.stamp = curr_t;
-    vel.twist.linear.x = vx;
-    vel.twist.linear.y = vy;
-    vel.twist.angular.z = wz;
+    vel.twist = applied_cmd;
     cmds.push_back(vel);
 
-    // update goal dist
-    wpx = path.poses[path.poses.size() - 1].pose.position.x;
-    wpy = path.poses[path.poses.size() - 1].pose.position.y;
-    goal_dist = sqrt((rx - wpx) * (rx - wpx) + (ry - wpy) * (ry - wpy));
-    steps++;
+    goal_distance = nav2_util::geometry_utils::euclidean_distance(
+      current_rp, path.poses.back());
   }
 
+  
   // Publish the path received
   received_path_pub_->publish(path);
 
@@ -283,7 +381,28 @@ bool PathTrajectorizer::trajectorize(nav_msgs::msg::Path& path, const geometry_m
 
   // publish the new path
   computed_path_pub_->publish(path);
-
+  if (lookahead_marker_pub_ && !lookahead_points.empty() &&
+      lookahead_marker_pub_->get_subscription_count() > 0)
+  {
+    visualization_msgs::msg::MarkerArray marker_array;
+    visualization_msgs::msg::Marker marker;
+    marker.header = new_path.header;
+    marker.ns = "lookahead_points";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+    marker.scale.x = 0.08;
+    marker.scale.y = 0.08;
+    marker.scale.z = 0.08;
+    marker.color.a = 1.0;
+    marker.color.r = 0.0;
+    marker.color.g = 0.8;
+    marker.color.b = 0.2;
+    marker.points = lookahead_points;
+    marker.pose.orientation.w = 1.0;
+    marker_array.markers.emplace_back(std::move(marker));
+    lookahead_marker_pub_->publish(std::move(marker_array));
+  }
   return true;
 }
 

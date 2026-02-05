@@ -41,6 +41,7 @@
 #include "mpc_sfm_motion_model/critics/curvature_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/distance_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/goal_align_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/goal_proximity_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/obstacle_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/social_work_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/velocity_cost_function.hpp"
@@ -90,6 +91,18 @@ struct OptimizerParams
   double goal_align_w_;
   double obstacle_w_;
   double proxemics_w_;
+  double goal_proximity_w_;
+  double goal_proximity_activation_radius_;
+  double goal_proximity_decay_distance_;
+  bool use_adaptive_velocity_cost;
+  double adaptive_velocity_distance_;
+  double adaptive_velocity_min_scale_;
+  bool use_social_work_cost;
+  bool use_social_angle_cost;
+  bool use_social_proxemics_cost;
+  bool use_social_path_follow_cost;
+  bool use_social_path_align_cost;
+  int max_agents;
   float current_path_w;
   float current_cmds_w;
   float max_time;
@@ -98,6 +111,14 @@ struct OptimizerParams
   int parameter_block_length_;
   bool debug;
   int max_iterations;
+  double max_linear_vel;
+  double min_linear_vel;
+  double max_angular_vel;
+  double min_angular_vel;
+  double desired_linear_vel;
+  double agent_velocity_bound;
+  double stationary_agent_velocity_bound;
+  double stationary_agent_speed_threshold;
 };
 
 /**
@@ -165,9 +186,9 @@ public:
    * @return false if optimization failed
    */
   bool optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_proj, const nav2_costmap_2d::Costmap2D* costmap,
-                //const obstacle_distance_msgs::msg::ObstacleDistance& obstacles,
                 std::vector<geometry_msgs::msg::TwistStamped>& cmds, const people_msgs::msg::People& people,
-                const geometry_msgs::msg::Twist& speed, const float time_step);
+                const geometry_msgs::msg::Twist& speed, const float time_step,
+                const geometry_msgs::msg::PoseStamped& goal_pose);
 
 private:
   /**
@@ -234,8 +255,28 @@ private:
   double curvature_w_;
   double proxemics_w_;
   double curvature_angle_min_;
+  double goal_proximity_w_;
+  double goal_proximity_activation_radius_;
+  double goal_proximity_decay_distance_;
+  bool use_adaptive_velocity_cost_;
+  double adaptive_velocity_distance_;
+  double adaptive_velocity_min_scale_;
+  bool use_social_work_cost_{true};
+  bool use_social_angle_cost_{true};
+  bool use_social_proxemics_cost_{true};
+  bool use_social_path_follow_cost_{true};
+  bool use_social_path_align_cost_{true};
   float current_path_w;
   float current_cmds_w;
+  double max_linear_vel_;
+  double min_linear_vel_;
+  double max_angular_vel_;
+  double min_angular_vel_;
+  double desired_linear_vel_;
+  double agent_velocity_bound_;
+  double stationary_agent_velocity_bound_;
+  double stationary_agent_speed_threshold_;
+  int max_agents_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
   std::shared_ptr<ceres::Grid2D<float>> obs_grid_;

@@ -102,9 +102,8 @@ controller_server:
       stateful: True
 
     FollowPath:
-      plugin: "mpc_sfm_motion_model::MPCSFMMotionModel"
+      plugin: "mpc_sfm_motion_model::MPCEnlargedState"
       trajectorizer:
-        omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 2.0
         max_angular_vel: 1.4
@@ -130,6 +129,7 @@ controller_server:
           velocity_weight: 10.0
           angle_weight: 250.0
           agent_angle_weight: 40.0 #50.0
+          proxemics_weight: 35.0
           velocity_feasibility_weight: 5.0
           goal_align_weight: 10.0
           obstacle_weight: 0.13 #0.15

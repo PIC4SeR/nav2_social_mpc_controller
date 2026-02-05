@@ -61,32 +61,24 @@ public:
   void setPlan(const nav_msgs::msg::Path& path);
 
   /**
-   * @brief Gets the global plan
-   *
-   * @return The global plan
+   * @brief Resets the pruned plan back into the global plan.
+   */
+  void resetPlan();
+
+  /**
+   * @brief Gets the current global plan
    */
   nav_msgs::msg::Path getPlan()
   {
     return global_plan_;
   }
 
-  /**
-   * @brief Gets the transformed goal
-   *
-   * @param goal_dist The distance to the goal
-   * @param transformed_plan The transformed plan
-   * @return The transformed goal
-   */
-
-  geometry_msgs::msg::PointStamped getTransformedGoal(const double& goal_dist,
-                                                      const nav_msgs::msg::Path& transformed_plan,
-                                                      const geometry_msgs::msg::PoseStamped& robot_pose);
-
 protected:
   rclcpp::Duration transform_tolerance_{ 0, 0 };
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav_msgs::msg::Path global_plan_;
+  nav_msgs::msg::Path pruned_plan_;
   rclcpp::Logger logger_{ rclcpp::get_logger("PathHandler") };
 };
 

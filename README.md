@@ -16,7 +16,6 @@ At the moment of this development, people_msgs were not still available to be in
 
 * **Trajectorizer**
 
-  * `omnidirectional`  Whether to consider omnidirectional robot locomotion or a differential
   * `desired_linear_vel`  The desired maximum linear velocity to use 
   * `lookahead_dist`  The lookahead distance to use to find the lookahead point 
   * `max_angular_vel`  Maximum allowable angular velocity 
@@ -33,6 +32,15 @@ At the moment of this development, people_msgs were not still available to be in
   * `gradient_tol`  Gradient tolerance optimization termination criterion (*1e-10* by default) 
   * `max_iterations`  maximum iterations of the optimization (*100* by default) 
   * `debug_optimizer`  whether to active debugging 
+  * `agent_velocity_bound`  Maximum absolute planar velocity (m/s) assigned to moving agents inside the optimizer (*1.0* by default)
+  * `stationary_agent_velocity_bound`  Maximum absolute planar velocity (m/s) allowed when an agent is detected as nearly stationary (*0.1* by default)
+  * `stationary_agent_speed_threshold`  Linear speed (m/s) below which an agent is considered stationary for bounding purposes (*0.01* by default)
+  * `goal_proximity_weight`  Weight of the goal attraction critic that activates near the final global goal
+  * `goal_proximity_activation_radius`  Distance (meters) from the final goal under which the attraction critic is enabled
+  * `goal_proximity_decay_distance`  Scale (meters) for the exponential term that shapes how aggressively the robot is pulled toward the final goal
+  * `use_adaptive_velocity_cost`  Enable distance-based scaling of the velocity tracking critic (default: *false*)
+  * `adaptive_velocity_distance`  Distance (m) over which the adaptive velocity cost transitions from full weight to the minimum scale
+  * `adaptive_velocity_min_scale`  Minimum scale (0-1) applied to the velocity cost weight when the robot is near the goal
 
 * **Cost function**
 
@@ -66,7 +74,6 @@ controller_server:
     FollowPath:
       plugin: "mpc_enlarged_state::MPCEnlargedState"
       trajectorizer:
-        omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 2.0
         max_angular_vel: 1.4
@@ -86,6 +93,11 @@ controller_server:
         debug_optimizer: false
         current_path_weight: 1.0
         current_cmds_weight: 0.5
+        goal_proximity_activation_radius: 0.75
+        goal_proximity_decay_distance: 0.25
+        use_adaptive_velocity_cost: true
+        adaptive_velocity_distance: 1.0
+        adaptive_velocity_min_scale: 0.2
         weights:
           distance_weight: 20.0
           social_weight: 120.0 # 120.0 # 400.0
@@ -96,4 +108,5 @@ controller_server:
           goal_align_weight: 10.0
           obstacle_weight: 0.15
           proxemics_weight: 100.0
+          goal_proximity_weight: 5.0
 ```

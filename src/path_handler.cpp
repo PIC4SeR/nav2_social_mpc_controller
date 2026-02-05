@@ -71,11 +71,14 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
 
   // We'll discard points on the plan that are outside the local costmap
   const auto& costmap = *costmap_ros_->getCostmap();
-  double dist_threshold = std::max(costmap.getSizeInMetersX(), costmap.getSizeInMetersY()) / 2.0;
-  auto transformation_end =
-      std::find_if(transformation_begin, global_plan_poses.end(), [&](const auto& global_plan_pose) {
-        return euclidean_distance(global_plan_pose, robot_pose) > dist_threshold;
-      });
+  double max_costmap_extent = std::max(costmap.getSizeInMetersX(), costmap.getSizeInMetersY()) / 2.0;
+
+  // Find points up to max_transform_dist so we only transform them.
+  auto transformation_end = std::find_if(
+    transformation_begin, global_plan_.poses.end(),
+    [&](const auto & pose) {
+      return euclidean_distance(pose, robot_pose) > max_costmap_extent;
+    });
 
   // Lambda to transform a PoseStamped from global frame to local
   auto transformGlobalPoseToLocal = [&](const auto& global_plan_pose) {
@@ -112,9 +115,7 @@ nav_msgs::msg::Path PathHandler::transformGlobalPlan(const geometry_msgs::msg::P
   if (transformed_plan.poses.empty())
   {
     RCLCPP_WARN(logger_,
-                "No pose of the global plan is inside the local costmap. Resetting plan and projecting closest pose.");
-
-    // resetPlan();
+                "No pose of the global plan is inside the local costmap projecting closest pose.");
 
     const double min_x = costmap.getOriginX();
     const double min_y = costmap.getOriginY();

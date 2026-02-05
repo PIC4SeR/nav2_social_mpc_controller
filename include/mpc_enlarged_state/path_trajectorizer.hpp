@@ -20,16 +20,25 @@
 #include <string>
 #include <vector>
 
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
+#include "mpc_enlarged_state/tools/motion_model.hpp"
+#include "mpc_enlarged_state/tools/regulated_pure_pursuit.hpp"
 #include "nav_msgs/msg/path.h"
 #include "nav_msgs/msg/path.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "tf2/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
+
+namespace nav2_core
+{
+class GoalChecker;
+}
 
 namespace mpc_enlarged_state
 {
@@ -52,6 +61,22 @@ public:
   ~PathTrajectorizer();
 
   /**
+   * @brief Inject a motion model to integrate the robot state.
+   * @param motion_model Concrete kinematic model; defaults to planar if nullptr is passed.
+   */
+  inline void setMotionModel(std::unique_ptr<MotionModel> motion_model)
+  {
+    if (motion_model)
+    {
+      motion_model_ = std::move(motion_model);
+    }
+    else
+    {
+      motion_model_ = std::make_unique<HolonomicMotionModel>(MotionModel::Limits{});
+    }
+  }
+
+  /**
    * @brief Configure smoother parameters and member variables
    * @param parent WeakPtr to node
    * @param name Name of plugin
@@ -59,8 +84,6 @@ public:
    */
   void configure(rclcpp_lifecycle::LifecycleNode::WeakPtr parent, std::string name,
                  std::shared_ptr<tf2_ros::Buffer> tf);
-  // std::shared_ptr<nav2_costmap_2d::CostmapSubscriber> costmap_sub,
-  // std::shared_ptr<nav2_costmap_2d::FootprintSubscriber> footprint_sub);
 
   /**
    * @brief Cleanup controller state machine
@@ -85,53 +108,29 @@ public:
    * @return trajectorized path
    */
   bool trajectorize(nav_msgs::msg::Path& path, const geometry_msgs::msg::PoseStamped& path_robot_pose,
-                    std::vector<geometry_msgs::msg::TwistStamped>& cmds);
+                    const geometry_msgs::msg::Twist& speed,
+                    std::vector<geometry_msgs::msg::TwistStamped>& cmds,
+                    nav2_core::GoalChecker* goal_checker = nullptr);
 
   float inline getTimeStep()
   {
     return time_step_;
   }
 
+  inline void resetLastCommand()
+  {
+    last_cmd_ = geometry_msgs::msg::Twist();
+    have_last_cmd_ = false;
+  }
+
 protected:
-  /**
-   * @brief  Compute x position based on velocity
-   * @param  xi The current x position
-   * @param  vx The current x velocity
-   * @param  vy The current y velocity
-   * @param  theta The current orientation
-   * @param  dt The timestep to take
-   * @return The new x position
-   */
-  inline double computeNewXPosition(double xi, double vx, double vy, double theta, double dt)
-  {
-    return xi + (vx * cos(theta) + vy * cos(M_PI_2 + theta)) * dt;  //
-  }
-
-  /**
-   * @brief  Compute y position based on velocity
-   * @param  yi The current y position
-   * @param  vx The current x velocity
-   * @param  vy The current y velocity
-   * @param  theta The current orientation
-   * @param  dt The timestep to take
-   * @return The new y position
-   */
-  inline double computeNewYPosition(double yi, double vx, double vy, double theta, double dt)
-  {
-    return yi + (vx * sin(theta) + vy * sin(M_PI_2 + theta)) * dt;
-  }
-
-  /**
-   * @brief  Compute orientation based on velocity
-   * @param  thetai The current orientation
-   * @param  vth The current theta velocity
-   * @param  dt The timestep to take
-   * @return The new orientation
-   */
-  inline double computeNewThetaPosition(double thetai, double vth, double dt)
-  {
-    return thetai + vth * dt;
-  }
+  geometry_msgs::msg::PoseStamped getLookAheadPoint(const nav_msgs::msg::Path& path, double rx, double ry,
+                                                    double rtheta) const;
+  int findWaypointIndex(const nav_msgs::msg::Path& path, double rx, double ry, double target_dist) const;
+  rclcpp::Time applyMotionModel(geometry_msgs::msg::PoseStamped& robot_pose, const geometry_msgs::msg::Twist& cmd,
+                                const geometry_msgs::msg::Twist& prev_cmd, geometry_msgs::msg::Twist& applied_cmd
+                                ) const;
+  double computeTargetLinearVelocity(double curvature_measure) const;
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr parent;
   std::shared_ptr<tf2_ros::Buffer> tf_;
@@ -142,17 +141,29 @@ protected:
   double desired_linear_vel_;
   double waypoint_dist_tol_;
   double lookahead_dist_;
+  bool allow_reverse_;
+  double reverse_heading_threshold_;
+  double max_reverse_speed_;
+  double max_linear_vel_;
   double max_angular_vel_;
-  bool omnidirectional_;
   double time_step_;
   double max_steps_;
-  double offset_extra_pose_;
-  int extra_points_to_waypoint_{1};
-  int iteration_{0};
-  int max_iterations_;
+  double max_linear_accel_;
+  double max_angular_accel_;
+  double min_approach_linear_velocity_{ 0.05 };
+  bool use_interpolation_{ false };
+  bool use_rotate_to_heading_{ true };
+  double rotate_to_heading_angular_vel_{ 0.75 };
+  double rotate_to_heading_min_angle_{ 1.0 };
+
   std::string base_frame_;
+  geometry_msgs::msg::Twist last_cmd_;
+  bool have_last_cmd_{ false };
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> received_path_pub_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> computed_path_pub_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>> lookahead_marker_pub_;
+  std::unique_ptr<MotionModel> motion_model_;
+  RegulatedPurePursuit pure_pursuit_{};
 };
 
 }  // namespace mpc_enlarged_state

@@ -29,25 +29,6 @@
 namespace mpc_enlarged_state
 {
 
-
-/**
- * @brief Wraps an angle to the range [-pi, pi].
- *
- * This function ensures that the angle is within the range of -pi to pi,
- * which is useful for angle normalization in trigonometric calculations.
- *
- * @param angle The angle in radians to be wrapped.
- * @return The wrapped angle in radians.
- */
-//inline T wrapToPi(T angle)
-//{
-//  while (angle > T(M_PI))
-//    angle -= T(2.0 * M_PI);
-//  while (angle <= T(-M_PI))
-//    angle += T(2.0 * M_PI);
-//  return angle;
-//}
-
 class SocialOverallCost
 {
   /**
@@ -122,10 +103,10 @@ public:
     Eigen::Matrix<T, 6, 1> robot;
     auto [new_position_x, new_position_y, new_position_orientation, agent_x, agent_y, agent_theta] = computeAgentandRobotState(
         robot_init_, agents_init_, parameters, agent_index_, time_step_, current_position_, control_horizon_, block_length_);
-    robot(0, 0) = (T)new_position_x;                                                               // x
-    robot(1, 0) = (T)new_position_y;                                                               // y
-    robot(2, 0) = (T)new_position_orientation;                                                     // yaw
-    robot(3, 0) = (T)current_position_*time_step_;                                                                     // t
+    robot(0, 0) = (T)new_position_x;                // x
+    robot(1, 0) = (T)new_position_y;                // y
+    robot(2, 0) = (T)new_position_orientation;      // yaw
+    robot(3, 0) = (T)current_position_*time_step_;  // t
     if (current_position_ < control_horizon_)
     {
       robot(4, 0) = parameters[current_position_ / block_length_][0];  // lv
@@ -138,33 +119,37 @@ public:
     }
   const size_t total_agents = static_cast<size_t>(agents.cols());
   const size_t capped_agents = std::min(static_cast<size_t>(agent_index_), total_agents);
-    for (size_t k = 0; k < capped_agents; ++k) {
-      const Eigen::Index agent_col = static_cast<Eigen::Index>(k);
-    // Skip agents you’ve marked invalid
-      if (agents(3, agent_col) == (T)-1.0)
+  const bool has_valid_agents =
+      std::any_of(agents_init_.begin(), agents_init_.end(), [](const AgentStatus& st) { return st[3] != -1.0; }) &&
+      capped_agents > 0;
+  const bool social_terms_active = found_people_ && has_valid_agents;
+
+    if (social_terms_active) {
+      for (size_t k = 0; k < capped_agents; ++k) {
+        const Eigen::Index agent_col = static_cast<Eigen::Index>(k);
+        if (agents(3, agent_col) == (T)-1.0)
+        {
           continue;
+        }
 
-      // Overwrite the agent’s pose
-      agents(0, agent_col) = agent_x[k]; // agent_x
-      agents(1, agent_col) = agent_y[k];  // agent_y
-      agents(2, agent_col) = agent_theta[k];  // agent_theta
+        agents(0, agent_col) = agent_x[k];
+        agents(1, agent_col) = agent_y[k];
+        agents(2, agent_col) = agent_theta[k];
+        agents(3, agent_col) = (T)current_position_ * time_step_;
 
-      // Mark “last updated at” with your time step
-      agents(3, agent_col) = (T)current_position_ * time_step_; // agent_t
+        unsigned block_idx;
+        if (current_position_ < control_horizon_) {
+          block_idx = current_position_ / block_length_;
+        } else {
+          block_idx = (control_horizon_ - 1) / block_length_;
+        }
 
-      // Figure out which parameter block to use
-      unsigned block_idx;
-      if (current_position_ < control_horizon_) {
-        block_idx = current_position_ / block_length_;
-      } else {
-        block_idx = (control_horizon_ - 1) / block_length_;
+        unsigned param_offset = 2 + static_cast<unsigned>(2 * k);
+        T vx = parameters[block_idx][param_offset];
+        T vy = parameters[block_idx][param_offset + 1];
+        agents(4, agent_col) = ceres::sqrt(vx * vx + vy * vy);
+        agents(5, agent_col) = T(0.0);
       }
-
-      unsigned param_offset = 2 + static_cast<unsigned>(2 * k);
-      T vx = parameters[block_idx][param_offset];
-      T vy = parameters[block_idx][param_offset + 1];
-      agents(4, agent_col) = ceres::sqrt(vx * vx + vy * vy);  // linear vel as magnitude of (vx, vy)
-      agents(5, agent_col) = T(0.0); // angular vel
     }
     residuals[0] = (T)0.0;  // Initialize residual to zero for social work
     residuals[1] = (T)0.0;  // Initialize residual to zero for agent angle
@@ -172,14 +157,14 @@ public:
     residuals[3] = (T)0.0;  // Initialize residual to zero for path following
     residuals[4] = (T)0.0;  // Initialize residual to zero for path alignment
 
-  if (use_social_work_cost_ == true && found_people_ == true) {
-    residuals[0] += usingSocialWork(robot, agents);  // Update robot state
-    } 
-    if (use_angle_cost_ == true && found_people_ == true) {
-  residuals[1] += usingAngle(robot, robot_init_, agents);
+  if (social_terms_active && use_social_work_cost_) {
+    residuals[0] += usingSocialWork(robot, agents);
     }
-    if (use_proxemics_cost_ == true && found_people_ == true) {
-  residuals[2] += usingProxemics(robot, agents);
+    if (social_terms_active && use_angle_cost_) {
+    residuals[1] += usingAngle(robot, robot_init_, agents);
+    }
+    if (social_terms_active && use_proxemics_cost_) {
+    residuals[2] += usingProxemics(robot, agents);
     }
     if (use_path_follow_cost_ == true){
       Eigen::Matrix<T, 2, 1> p((T)new_position_x, (T)new_position_y);

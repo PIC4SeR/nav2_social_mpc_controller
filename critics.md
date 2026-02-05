@@ -54,6 +54,16 @@ Reduces the angular difference between the robot's orientation and the goal pose
 
 ---
 
+## Goal Proximity Cost Function
+
+**Purpose:**  
+Adds an exponential attraction toward the final global navigation goal once the robot is within a configurable activation radius.
+
+**Behavior:**  
+When the predicted future pose lies inside the activation radius, the residual grows with `exp(distance / decay)` so the optimizer prefers solutions that drive the robot directly into the goal region, even if the trajectorized path has already flattened out.
+
+---
+
 ## Obstacle Cost Function
 
 **Purpose:**  
@@ -97,7 +107,6 @@ Below is an example YAML configuration for the `FollowPath` behavior using the `
 FollowPath:
     plugin: "mpc_enlarged_state::MPCEnlargedState"
     trajectorizer:
-        omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 2.0
         max_angular_vel: 1.4

@@ -104,7 +104,6 @@ controller_server:
     FollowPath:
       plugin: "mpc_enlarged_state::MPCEnlargedState"
       trajectorizer:
-        omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 2.0
         max_angular_vel: 1.4

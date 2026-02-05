@@ -33,7 +33,6 @@ controller_server:
       rotate_to_goal_heading: false
       primary_controller: mpc_enlarged_state::MPCEnlargedState
       trajectorizer:
-        omnidirectional: false
         desired_linear_vel: 0.6
         lookahead_dist: 1.0
         max_angular_vel: 1.4

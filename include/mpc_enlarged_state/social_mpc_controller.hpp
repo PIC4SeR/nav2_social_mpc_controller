@@ -144,16 +144,6 @@ protected:
   bool transformPoint(const std::string frame, const geometry_msgs::msg::PointStamped& in_point,
                       geometry_msgs::msg::PointStamped& out_point) const;
 
-  /**
-    * @brief Compute a simple fallback command when close to the goal
-    *
-    * @param robot_pose Current robot pose
-    * @param goal_pose Goal pose
-    * @return geometry_msgs::msg::TwistStamped Fallback command
-  */
-  geometry_msgs::msg::TwistStamped computeFallbackCommand(
-      const geometry_msgs::msg::PoseStamped& robot_pose,
-      const geometry_msgs::msg::PoseStamped& goal_pose);
 
 
   std::shared_ptr<tf2_ros::Buffer> tf_;
@@ -174,11 +164,6 @@ protected:
   double max_linear_vel_;
   double min_linear_vel_;
   double max_angular_vel_;
-  bool fallback_{false};
-  double fallback_min_goal_distance_;
-  double fallback_linear_vel_;
-  double fallback_heading_tolerance_;
-  double fallback_angular_gain_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> local_path_pub_;
 
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>> people_traj_pub_;

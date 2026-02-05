@@ -66,9 +66,10 @@ std::tuple<T, T, T> computeUpdatedStateRedux(const geometry_msgs::msg::Pose& pos
 
 }
 template <typename T>
-std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRobotState(const geometry_msgs::msg::Pose& pose_0,const AgentsStates& agents, T const* const* parameters,
-                                             long unsigned int num_agents, double dt, unsigned int i, unsigned int control_horizon,
-                                             unsigned int block_size)
+std::tuple<T, T, T, std::vector<T>, std::vector<T>, std::vector<T>> computeAgentandRobotState(
+    const geometry_msgs::msg::Pose& pose_0, const AgentsStates& agents, T const* const* parameters,
+    unsigned int robot_block_count, bool has_agent_blocks, long unsigned int num_agents, double dt, unsigned int i,
+    unsigned int control_horizon, unsigned int block_size)
 {
   T x = T(pose_0.position.x);
   T y = T(pose_0.position.y);
@@ -85,41 +86,40 @@ std::tuple<T,T,T,std::vector<T>,std::vector<T>,std::vector<T>> computeAgentandRo
   }
 
   // Sum the contributions of the control inputs for the first i steps.
+  const T* const* robot_blocks = parameters;
+  const T* const* agent_blocks = has_agent_blocks ? parameters + robot_block_count : nullptr;
+  const unsigned int max_robot_index = robot_block_count > 0 ? robot_block_count - 1 : 0;
+  const unsigned int agent_stride = static_cast<unsigned int>(2 * num_agents);
+
   for (unsigned int j = 0; j <= i; j++)
   {
+    unsigned int block_index;
     if (j < control_horizon)
     {
-      unsigned int block_index = j / block_size;
-      x += parameters[block_index][0] * ceres::cos(theta) * dt;
-      y += parameters[block_index][0] * ceres::sin(theta) * dt;
-      theta += parameters[block_index][1] * dt;
-      // Check the number of agents and update their states accordingly
-    
-  for (size_t k = 0; k < tracked_agents; ++k) {
-      // param index for agent k:
-      unsigned idx = 2 + 2*k;
-      T vx = parameters[block_index][idx];
-      T vy = parameters[block_index][idx + 1];
-
-      agent_x[k] += vx * dt;
-      agent_y[k] += vy * dt;
-      agent_theta[k] = ceres::atan2(vy, vx);
-      }
+      block_index = j / block_size;
     }
     else
     {
-      x += parameters[(control_horizon - 1) / block_size][0] * ceres::cos(theta) * dt;
-      y += parameters[(control_horizon - 1) / block_size][0] * ceres::sin(theta) * dt;
-      theta += parameters[(control_horizon - 1) / block_size][1] * dt;
-  for (size_t k = 0; k < tracked_agents; ++k) {
-      // param index for agent k:
-      unsigned idx = 2 + 2*k;
-  T vx = parameters[(control_horizon-1)/block_size][idx];
-  T vy = parameters[(control_horizon-1)/block_size][idx + 1];
+      block_index = (control_horizon - 1) / block_size;
+    }
+    block_index = std::min(block_index, max_robot_index);
 
-  agent_x[k]     += vx * dt;
-  agent_y[k]     += vy * dt;
-  agent_theta[k]  = ceres::atan2(vy, vx);
+    const T* robot_block = robot_blocks[block_index];
+    x += robot_block[0] * ceres::cos(theta) * dt;
+    y += robot_block[0] * ceres::sin(theta) * dt;
+    theta += robot_block[1] * dt;
+
+    if (agent_blocks != nullptr && agent_stride > 0)
+    {
+      const T* agent_block = agent_blocks[block_index];
+      for (size_t k = 0; k < tracked_agents; ++k)
+      {
+        unsigned int idx = static_cast<unsigned int>(2 * k);
+        T vx = agent_block[idx];
+        T vy = agent_block[idx + 1];
+        agent_x[k] += vx * dt;
+        agent_y[k] += vy * dt;
+        agent_theta[k] = ceres::atan2(vy, vx);
       }
     }
   }

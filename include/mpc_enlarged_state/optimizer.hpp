@@ -158,24 +158,38 @@ public:
   };
   struct dynamic_optimizing_velocities
   {
-      std::vector<double> params;
+    vel robot;
+    std::vector<double> agents;
 
-      // Optional: Constructor to initialize with a specific number of parameters
-      dynamic_optimizing_velocities(size_t num_params = 0) : params(num_params) {}
+    void set_num_agents(size_t num_agents)
+    {
+      agents.assign(2 * num_agents, 0.0);
+    }
 
-      // Helper to add parameters (e.g., for each detected agent)
-      void add_agent_params() {
-          params.push_back(0.0); // Angular velocity
-          params.push_back(0.0); // Linear velocity
-      }
+    double* robot_data()
+    {
+      return robot.params;
+    }
 
-      // Helper to resize based on the number of agents
-      void set_num_agents(int num_agents) {
-          // Base 2 parameters for the robot itself
-          // + 2 parameters for each agent
-          params.resize(2 + (num_agents * 2));
-          // You might want to initialize these new elements to a default value if not already done
-      }
+    const double* robot_data() const
+    {
+      return robot.params;
+    }
+
+    double* agents_data()
+    {
+      return agents.empty() ? nullptr : agents.data();
+    }
+
+    const double* agents_data() const
+    {
+      return agents.empty() ? nullptr : agents.data();
+    }
+
+    unsigned int agent_block_size() const
+    {
+      return static_cast<unsigned int>(agents.size());
+    }
   };
   // t, yaw
   struct heading

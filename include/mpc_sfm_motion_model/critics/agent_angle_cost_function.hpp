@@ -82,9 +82,9 @@ class AgentAngleCost
    */
 public:
   using AgentAngleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentAngleCost>;
-  AgentAngleCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
-                 unsigned int current_position, double time_step, unsigned int control_horizon,
-                 unsigned int block_length);
+  AgentAngleCost(double weight, double velocity_alignment_weight, const AgentsStates& agents_init,
+                 const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
+                 unsigned int control_horizon, unsigned int block_length);
 
   /**
     * @brief Creates a Ceres cost function for the AgentAngleCost.
@@ -93,6 +93,7 @@ public:
     * AgentAngleCostFunction using the provided parameters.
 
     * @param weight The weight for the cost function.
+    * @param velocity_alignment_weight Weight for penalizing heading in the same direction as the agent's travel.
     * @param agents_init A vector of initial agent statuses.
     * @param robot_init The initial pose of the robot.
     * @param current_position The current position in the planning sequence.
@@ -102,13 +103,14 @@ public:
     * @return A pointer to the created AgentAngleCostFunction instance.
     */
 
-  inline static AgentAngleCostFunction* Create(double weight, const AgentsStates& agents_init,
+  inline static AgentAngleCostFunction* Create(double weight, double velocity_alignment_weight,
+                                               const AgentsStates& agents_init,
                                                const geometry_msgs::msg::Pose& robot_init,
                                                unsigned int current_position, double time_step,
                                                unsigned int control_horizon, unsigned int block_length)
   {
-    return new AgentAngleCostFunction(new AgentAngleCost(weight, agents_init, robot_init, current_position, time_step,
-                                                         control_horizon, block_length));
+    return new AgentAngleCostFunction(new AgentAngleCost(weight, velocity_alignment_weight, agents_init, robot_init,
+                                                         current_position, time_step, control_horizon, block_length));
   }
 
   /**
@@ -118,88 +120,83 @@ public:
    * @param residuals Pointer to the computed residual used in the optimization problem.
    *
    * The operator() function computes the updated state based on the input parameter block and evaluates
-   * the angular difference with respect to a pre-determined steering offset (either left or right) relative to
-   * the robot's initial orientation. If the nearest agent does not meet certain criteria (e.g., too far away,
-   * inactive), the cost is set to zero.
+   * how much the robot's projected heading points toward a nearby agent. The cost has two components:
+   *   1. Position alignment: penalizes heading toward the agent (softplus of cos(relative_angle))
+   *   2. Velocity alignment: penalizes heading in the same direction as the agent's travel
+   *   - Both use exponential distance decay, strongest when close
+   *   - No hard left/right branching, avoiding flickering at boundaries
+   * The gradient naturally steers the robot away from and opposite to the agent's travel direction.
    */
   template <typename T>
   bool operator()(T const* const* parameters, T* residuals) const
   {
-    Eigen::Matrix<T, 6, 3> agents_ = original_agents_.template cast<T>(); 
-    //auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-    //    robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
+    Eigen::Matrix<T, 6, 3> agents_ = original_agents_.template cast<T>();
     auto [new_position_x, new_position_y, new_position_orientation, agents] =
         computeSFMState(robot_init_, agents_, parameters, time_step_, current_position_, control_horizon_,
                         block_length_);
+
+    // Find closest valid, moving agent — measured from the PROJECTED robot position
     int closest_index = -1;
     T closest_distance_squared = T(9999.0);
     for (unsigned int i = 0; i < agents.cols(); i++)
     {
-      T dx = agents(0,i) - T(robot_init_.position.x);
-      T dy = agents(1,i) - T(robot_init_.position.y);
+      if (agents(3, i) == (T)-1.0)  // Skip invalid agents
+        continue;
+      T dx = agents(0, i) - new_position_x;
+      T dy = agents(1, i) - new_position_y;
       T distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents(4,i) > T(0.05))
+      if (distance_squared < closest_distance_squared && agents(4, i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = i;
       }
     }
+
     if (closest_index < 0 || closest_distance_squared > safe_distance_squared_)
     {
       residuals[0] = T(0.0);
       return true;
     }
-    Eigen::Matrix<T,6,1> closest_agent;
-    closest_agent = agents.col(closest_index);
-    const auto& agent = closest_agent;
-    // Compute angles.
-    T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
-    T robot_yaw = T(tf2::getYaw(robot_init_.orientation));
-    // Difference between agent's heading and the robot's initial orientation.
-    T agent_heading_diff = ceres::atan2(ceres::sin(T(agent[2]) - robot_yaw), ceres::cos(T(agent[2]) - robot_yaw));
-    // Helper to wrap angles into [-pi, pi].
-    auto wrapAngle = [](const T& angle) -> T { return ceres::atan2(ceres::sin(angle), ceres::cos(angle)); };
 
-    // --- Define angular thresholds and offsets ---
-    // Thresholds.
-    const T kThreshold = T(M_PI / 6.0);
-    const T kUpperThreshold = T(5 * M_PI / 6.0);
-    const T steering_right = -T(M_PI / 6.0);
-    const T steering_left = T(M_PI / 6.0);
-    T angular_diff;
+    // Angle from projected robot position to the closest agent
+    T angle_to_agent = ceres::atan2(agents(1, closest_index) - new_position_y,
+                                    agents(0, closest_index) - new_position_x);
 
-    if (agent_heading_diff <= -kUpperThreshold || agent_heading_diff >= kThreshold)
-    {
-      if (wrapAngle(agent_angle_initial - robot_yaw) < 0.0)
-      {
-        residuals[0] = T(0.0);
-        return true;
-      }
-      else
-      {
-        angular_diff = wrapAngle(new_position_orientation - (robot_yaw + steering_right));
-      }
-    }
+    // Relative angle: how much the agent is in front of the robot
+    // 0 = dead ahead, ±π = behind
+    T rel_angle = ceres::atan2(ceres::sin(angle_to_agent - new_position_orientation),
+                               ceres::cos(angle_to_agent - new_position_orientation));
 
-    else
-    {
-      if (wrapAngle(agent_angle_initial - robot_yaw) > 0.0)
-      {
-        residuals[0] = T(0.0);
-        return true;
-      }
-      else
-      {
-        angular_diff = wrapAngle(new_position_orientation - (robot_yaw + steering_left));
-      }
-    }
-    T cost = angular_diff * angular_diff;
-    residuals[0] = weight_ * cost;
+    // Heading alignment: cos(rel_angle) = 1 when pointing at agent, -1 when away
+    T alignment = ceres::cos(rel_angle);
+
+    // Smooth ReLU (softplus): only penalize when robot heading points toward agent
+    // softplus(x) = log(1 + exp(k*x)) / k  ≈  max(0, x) for large k
+    // k=5 gives a smooth transition: at alignment=0 → ~0.14 (mild), at 1 → ~1.0 (full)
+    T k = T(5.0);
+    T active = ceres::log(T(1.0) + ceres::exp(k * alignment)) / k;
+
+    // Exponential distance decay: strong when close, fades at safe distance
+    T dist_decay = ceres::exp(-closest_distance_squared / T(safe_distance_squared_));
+
+    // --- Component 2: penalize heading in the same direction as the agent's travel ---
+    // Agent's heading from SFM state (row 2 = yaw)
+    T agent_heading = agents(2, closest_index);
+
+    // How aligned is the robot's heading with the agent's travel direction
+    // +1 = same direction, -1 = opposite direction
+    T velocity_alignment = ceres::cos(new_position_orientation - agent_heading);
+
+    // Softplus: only penalize when heading in the same direction as the agent
+    T velocity_active = ceres::log(T(1.0) + ceres::exp(k * velocity_alignment)) / k;
+
+    residuals[0] = (T)weight_ * dist_decay * (active + (T)velocity_alignment_weight_ * velocity_active);
     return true;
   }
 
 private:
   double weight_;
+  double velocity_alignment_weight_;
   AgentsStates agents_init_;
   geometry_msgs::msg::Pose robot_init_;
   Eigen::Matrix<double, 6, 3> original_agents_;

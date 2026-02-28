@@ -37,6 +37,7 @@
 
 // cost functions
 #include "mpc_sfm_motion_model/critics/agent_angle_cost_function.hpp"
+#include "mpc_sfm_motion_model/critics/crossing_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/angle_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/curvature_cost_function.hpp"
 #include "mpc_sfm_motion_model/critics/distance_cost_function.hpp"
@@ -87,6 +88,9 @@ struct OptimizerParams
   double velocity_w_;
   double angle_w_;
   double agent_angle_w_;
+  double velocity_alignment_w_;
+  double crossing_w_;
+  double crossing_bearing_w_;
   double velocity_feasibility_w_;
   double goal_align_w_;
   double obstacle_w_;
@@ -94,11 +98,9 @@ struct OptimizerParams
   double goal_proximity_w_;
   double goal_proximity_activation_radius_;
   double goal_proximity_decay_distance_;
-  bool use_adaptive_velocity_cost;
-  double adaptive_velocity_distance_;
-  double adaptive_velocity_min_scale_;
   bool use_social_work_cost;
   bool use_social_angle_cost;
+  bool use_social_crossing_cost;
   bool use_social_proxemics_cost;
   bool use_social_path_follow_cost;
   bool use_social_path_align_cost;
@@ -217,20 +219,6 @@ private:
                                      const geometry_msgs::msg::Twist& speed, const float current_path_w,
                                      const float current_cmds_w, const float maxtime, const float timestep);
 
-  /**
-   * @brief Project people positions over time
-   * @param init_people Initial people positions
-   * @param robot_path Robot path
-   * @param od Obstacle distances
-   * @param maxtime Maximum time horizon
-   * @param timestep Time step
-   * @return Vector of vector of agent statuses
-   */
-  AgentsTrajectories project_people(const AgentsStates& init_people
-                                   //const AgentTrajectory& robot_path,
-                                   // const obstacle_distance_msgs::msg::ObstacleDistance& od, const float& maxtime,
-                                   // const float& timestep
-                                  );
 
   /**
    * @brief Compute obstacle position relative to agent
@@ -247,6 +235,9 @@ private:
   double obstacle_w_;
   double velocity_feasibility_w_;
   double agent_angle_w_;
+  double velocity_alignment_w_;
+  double crossing_w_;
+  double crossing_bearing_w_;
   double angle_w_;
   double distance_w_;
   double socialwork_w_;
@@ -258,11 +249,9 @@ private:
   double goal_proximity_w_;
   double goal_proximity_activation_radius_;
   double goal_proximity_decay_distance_;
-  bool use_adaptive_velocity_cost_;
-  double adaptive_velocity_distance_;
-  double adaptive_velocity_min_scale_;
   bool use_social_work_cost_{true};
   bool use_social_angle_cost_{true};
+  bool use_social_crossing_cost_{true};
   bool use_social_proxemics_cost_{true};
   bool use_social_path_follow_cost_{true};
   bool use_social_path_align_cost_{true};

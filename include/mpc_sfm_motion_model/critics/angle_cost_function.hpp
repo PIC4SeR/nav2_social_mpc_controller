@@ -101,7 +101,7 @@ public:
     auto point_heading = atan2(dy, dx);
     auto new_yaw = new_position_orientation;
     new_yaw = atan2(sin(new_yaw), cos(new_yaw));
-    auto angle_diff = (T)point_heading - new_yaw;
+    auto angle_diff = ceres::atan2(ceres::sin(point_heading - new_yaw), ceres::cos(point_heading - new_yaw));
     residuals[0] = (T)weight_ * (angle_diff) * (angle_diff);
 
     return true;

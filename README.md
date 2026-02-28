@@ -38,9 +38,6 @@ At the moment of this development, people_msgs were not still available to be in
   * `goal_proximity_weight`  Weight of the goal attraction critic that activates near the final global goal
   * `goal_proximity_activation_radius`  Distance (meters) from the final goal under which the attraction critic is enabled
   * `goal_proximity_decay_distance`  Scale (meters) for the exponential term that shapes how aggressively the robot is pulled toward the final goal
-  * `use_adaptive_velocity_cost`  Enable distance-based scaling of the velocity tracking critic (default: *false*)
-  * `adaptive_velocity_distance`  Distance (m) over which the adaptive velocity cost transitions from full weight to the minimum scale
-  * `adaptive_velocity_min_scale`  Minimum scale (0-1) applied to the velocity cost weight when the robot is near the goal
 
 * **Cost function**
 
@@ -95,9 +92,6 @@ controller_server:
         current_cmds_weight: 0.5
         goal_proximity_activation_radius: 0.75
         goal_proximity_decay_distance: 0.25
-        use_adaptive_velocity_cost: true
-        adaptive_velocity_distance: 1.0
-        adaptive_velocity_min_scale: 0.2
         weights:
           distance_weight: 20.0
           social_weight: 120.0 # 120.0 # 400.0

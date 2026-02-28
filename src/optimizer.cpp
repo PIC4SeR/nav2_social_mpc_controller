@@ -68,6 +68,12 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(weights + "angle_weight", angle_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "agent_angle_weight", rclcpp::ParameterValue(0.5));
   node->get_parameter(weights + "agent_angle_weight", agent_angle_w_);
+  nav2_util::declare_parameter_if_not_declared(node, weights + "velocity_alignment_weight", rclcpp::ParameterValue(0.5));
+  node->get_parameter(weights + "velocity_alignment_weight", velocity_alignment_w_);
+  nav2_util::declare_parameter_if_not_declared(node, weights + "crossing_weight", rclcpp::ParameterValue(0.0));
+  node->get_parameter(weights + "crossing_weight", crossing_w_);
+  nav2_util::declare_parameter_if_not_declared(node, weights + "crossing_bearing_weight", rclcpp::ParameterValue(2.0));
+  node->get_parameter(weights + "crossing_bearing_weight", crossing_bearing_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "proxemics_weight", rclcpp::ParameterValue(90.0));
   node->get_parameter(weights + "proxemics_weight", proxemics_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "velocity_feasibility_weight",
@@ -79,13 +85,12 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(weights + "goal_align_weight", goal_align_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "goal_proximity_weight", rclcpp::ParameterValue(0.0));
   node->get_parameter(weights + "goal_proximity_weight", goal_proximity_w_);
-  nav2_util::declare_parameter_if_not_declared(node, local_name + "use_adaptive_velocity_cost", rclcpp::ParameterValue(false));
-  nav2_util::declare_parameter_if_not_declared(node, local_name + "adaptive_velocity_distance", rclcpp::ParameterValue(1.0));
-  nav2_util::declare_parameter_if_not_declared(node, local_name + "adaptive_velocity_min_scale", rclcpp::ParameterValue(0.2));
   nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_social_work", rclcpp::ParameterValue(true));
   node->get_parameter(overall_cost + "enable_social_work", use_social_work_cost);
   nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_angle", rclcpp::ParameterValue(true));
   node->get_parameter(overall_cost + "enable_angle", use_social_angle_cost);
+  nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_crossing", rclcpp::ParameterValue(false));
+  node->get_parameter(overall_cost + "enable_crossing", use_social_crossing_cost);
   nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_proxemics", rclcpp::ParameterValue(true));
   node->get_parameter(overall_cost + "enable_proxemics", use_social_proxemics_cost);
   nav2_util::declare_parameter_if_not_declared(node, overall_cost + "enable_path_follow", rclcpp::ParameterValue(true));
@@ -127,9 +132,6 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(local_name + "stationary_agent_speed_threshold", stationary_agent_speed_threshold);
   node->get_parameter(local_name + "goal_proximity_activation_radius", goal_proximity_activation_radius_);
   node->get_parameter(local_name + "goal_proximity_decay_distance", goal_proximity_decay_distance_);
-  node->get_parameter(local_name + "use_adaptive_velocity_cost", use_adaptive_velocity_cost);
-  node->get_parameter(local_name + "adaptive_velocity_distance", adaptive_velocity_distance_);
-  node->get_parameter(local_name + "adaptive_velocity_min_scale", adaptive_velocity_min_scale_);
 }
 // constructor and destructor for Optimizer
 Optimizer::Optimizer()
@@ -157,10 +159,14 @@ void Optimizer::initialize(const OptimizerParams params)
   velocity_w_ = params.velocity_w_;
   angle_w_ = params.angle_w_;
   agent_angle_w_ = params.agent_angle_w_;
+  velocity_alignment_w_ = params.velocity_alignment_w_;
+  crossing_w_ = params.crossing_w_;
+  crossing_bearing_w_ = params.crossing_bearing_w_;
   proxemics_w_ = params.proxemics_w_;
   goal_proximity_w_ = params.goal_proximity_w_;
   use_social_work_cost_ = params.use_social_work_cost;
   use_social_angle_cost_ = params.use_social_angle_cost;
+  use_social_crossing_cost_ = params.use_social_crossing_cost;
   use_social_proxemics_cost_ = params.use_social_proxemics_cost;
   use_social_path_follow_cost_ = params.use_social_path_follow_cost;
   use_social_path_align_cost_ = params.use_social_path_align_cost;
@@ -181,9 +187,6 @@ void Optimizer::initialize(const OptimizerParams params)
   desired_linear_vel_ = params.desired_linear_vel;
   goal_proximity_activation_radius_ = params.goal_proximity_activation_radius_;
   goal_proximity_decay_distance_ = params.goal_proximity_decay_distance_;
-  use_adaptive_velocity_cost_ = params.use_adaptive_velocity_cost;
-  adaptive_velocity_distance_ = params.adaptive_velocity_distance_;
-  adaptive_velocity_min_scale_ = params.adaptive_velocity_min_scale_;
   agent_velocity_bound_ = params.agent_velocity_bound;
   stationary_agent_velocity_bound_ = params.stationary_agent_velocity_bound;
   stationary_agent_speed_threshold_ = params.stationary_agent_speed_threshold;
@@ -221,6 +224,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 {
   // transfrom people to agent status factor
   AgentsStates init_people = people_to_status(people);
+  RCLCPP_DEBUG(rclcpp::get_logger("optimizer"), "Optimizing trajectory with %zu people", people_proj.size());
 
   // Path has always at least 2 points
   if (path.poses.size() < 2)
@@ -255,11 +259,6 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   // use the projected path to make it into the a parametrized format
   AgentsStates optim_status = format_to_optimize(path, previous_path, cmds, previous_cmds, speed, current_path_w,
                                                  current_cmds_w, max_time, time_step);
-  // use the parametrized format to project the people in the field of view of the robot, using the obstacles and the
-  // initial status of the people
-  people_proj = project_people(init_people
-                             // , optim_status, obstacles, max_time, time_step
-                            );
 
   // get different parameters from the initial status
   // and create the evolving poses, positions, headings and velocities
@@ -330,36 +329,50 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     double counter_step = counter * time_step;
     if (people.people.size() != 0)
     {
-      auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, people_proj[0], evolving_poses[0].pose,
-                                                            counter_step, i, time_step, control_horizon, block_length);
-      auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, people_proj[0], evolving_poses[0].pose,
-                                                            i, time_step, control_horizon, block_length);
-      auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, people_proj[0], evolving_poses[0].pose,
-                                                         counter_step, i, time_step, control_horizon, block_length);
-      if (i < control_horizon)
+      // Determine the number of parameter blocks for this time step
+      unsigned int num_param_blocks = (i < control_horizon) ? (i / block_length + 1)
+                                                            : ((control_horizon - 1) / block_length + 1);
+
+      if (use_social_work_cost_)
       {
-        for (unsigned int j = 0; j <= i / block_length; j++)
-        {
-          agent_angle_function_f->AddParameterBlock(2);
-          social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
-        }
+        auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, init_people, evolving_poses[0].pose,
+                                                              counter_step, i, time_step, control_horizon, block_length);
+        for (unsigned int j = 0; j < num_param_blocks; j++)
+          social_work_function_f->AddParameterBlock(2);
+        social_work_function_f->SetNumResiduals(1);
+        problem.AddResidualBlock(social_work_function_f, NULL, parameter_blocks);
       }
-      else
+
+      if (use_social_angle_cost_)
       {
-        for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
-        {
+        auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, velocity_alignment_w_, init_people, evolving_poses[0].pose,
+                                                              i, time_step, control_horizon, block_length);
+        for (unsigned int j = 0; j < num_param_blocks; j++)
           agent_angle_function_f->AddParameterBlock(2);
-          social_work_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-          proxemics_function_f->AddParameterBlock(2);    // Each velocity block has 2 params (v, ω)
-        }
+        agent_angle_function_f->SetNumResiduals(1);
+        problem.AddResidualBlock(agent_angle_function_f, NULL, parameter_blocks);
       }
-      agent_angle_function_f->SetNumResiduals(1);
-      social_work_function_f->SetNumResiduals(1);
-      proxemics_function_f->SetNumResiduals(1);
-      problem.AddResidualBlock(agent_angle_function_f, NULL, parameter_blocks);
-      problem.AddResidualBlock(social_work_function_f, NULL, parameter_blocks);
-      problem.AddResidualBlock(proxemics_function_f, NULL, parameter_blocks);
+
+      if (use_social_crossing_cost_)
+      {
+        auto* crossing_function_f = CrossingCost::Create(crossing_w_, crossing_bearing_w_,
+                                                          init_people, evolving_poses[0].pose,
+                                                          i, time_step, control_horizon, block_length);
+        for (unsigned int j = 0; j < num_param_blocks; j++)
+          crossing_function_f->AddParameterBlock(2);
+        crossing_function_f->SetNumResiduals(1);
+        problem.AddResidualBlock(crossing_function_f, NULL, parameter_blocks);
+      }
+
+      if (use_social_proxemics_cost_)
+      {
+        auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, init_people, evolving_poses[0].pose,
+                                                           counter_step, i, time_step, control_horizon, block_length);
+        for (unsigned int j = 0; j < num_param_blocks; j++)
+          proxemics_function_f->AddParameterBlock(2);
+        proxemics_function_f->SetNumResiduals(1);
+        problem.AddResidualBlock(proxemics_function_f, NULL, parameter_blocks);
+      }
     }
     auto* velocity_function_f =
         VelocityCost::Create(velocity_w_, desired_linear_vel_, i, control_horizon, block_length);
@@ -394,40 +407,38 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     // add the positions to optimize
     Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
 
+    // Determine the number of parameter blocks for this time step
+    unsigned int num_nav_param_blocks = (i < control_horizon) ? (i / block_length + 1)
+                                                              : ((control_horizon - 1) / block_length + 1);
+
     // add the cost functions for the path following and alignment
-    auto* path_follow_cost_function_f = DistanceCost::Create(
-        distance_w_, final_trajectorized_point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+    if (use_social_path_follow_cost_)
+    {
+      auto* path_follow_cost_function_f = DistanceCost::Create(
+          distance_w_, final_trajectorized_point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+      for (unsigned int j = 0; j < num_nav_param_blocks; j++)
+        path_follow_cost_function_f->AddParameterBlock(2);
+      path_follow_cost_function_f->SetNumResiduals(1);
+      problem.AddResidualBlock(path_follow_cost_function_f, NULL, parameter_blocks);
+    }
+
     // add the angle cost function, which is used to align the robot with the path
-    auto* path_align_cost_function_f =
-        DistanceCost::Create(angle_w_, point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+    if (use_social_path_align_cost_)
+    {
+      auto* path_align_cost_function_f =
+          DistanceCost::Create(angle_w_, point, evolving_poses[0].pose, i, time_step, control_horizon, block_length);
+      for (unsigned int j = 0; j < num_nav_param_blocks; j++)
+        path_align_cost_function_f->AddParameterBlock(2);
+      path_align_cost_function_f->SetNumResiduals(1);
+      problem.AddResidualBlock(path_align_cost_function_f, NULL, parameter_blocks);
+    }
 
     // add the obstacle cost function, which is used to avoid obstacles
-    // the obstacle cost function is used to avoid obstacles, it takes the costmap and the interpolator as parameters
     auto* obs_cost_function_f = ObstacleCost::Create(obstacle_w_, costmap, costmap_interpolator, evolving_poses[0].pose,
                                                      i, time_step, control_horizon, block_length);
-    if (i < control_horizon)
-    {
-      for (unsigned int j = 0; j <= i / block_length; j++)
-      {
-        path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-        path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
-        obs_cost_function_f->AddParameterBlock(2);
-      }
-    }
-    else
-    {
-      for (unsigned int j = 0; j <= (control_horizon - 1) / block_length; j++)
-      {
-        path_follow_cost_function_f->AddParameterBlock(2);  // Each velocity block has 2 params (v, ω)
-        path_align_cost_function_f->AddParameterBlock(2);   // Each velocity block has 2 params (v, ω)
-        obs_cost_function_f->AddParameterBlock(2);
-      }
-    }
-    path_follow_cost_function_f->SetNumResiduals(1);
-    path_align_cost_function_f->SetNumResiduals(1);
+    for (unsigned int j = 0; j < num_nav_param_blocks; j++)
+      obs_cost_function_f->AddParameterBlock(2);
     obs_cost_function_f->SetNumResiduals(1);
-    problem.AddResidualBlock(path_follow_cost_function_f, NULL, parameter_blocks);
-    problem.AddResidualBlock(path_align_cost_function_f, NULL, parameter_blocks);
     problem.AddResidualBlock(obs_cost_function_f, NULL, parameter_blocks);
     if (goal_proximity_w_ > 0.0)
     {
@@ -452,16 +463,19 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       goal_proximity_cost_function_f->SetNumResiduals(1);
       problem.AddResidualBlock(goal_proximity_cost_function_f, NULL, parameter_blocks);
     }
-    if (i != 0 && i < control_horizon / block_length)
-    {
-      auto* velocity_feasibility_cost_function_f =
-          VelocityFeasibilityCost::Create(velocity_feasibility_w_, i, control_horizon);
-      problem.AddResidualBlock(velocity_feasibility_cost_function_f, NULL, optim_velocities[i].params,
-                               optim_velocities[i - 1].params);
-    }
+  }  // end of main optimization loop
+
+  // Add velocity feasibility costs between adjacent velocity blocks
+  unsigned int num_blocks = control_horizon / block_length;
+  for (unsigned int b = 1; b < num_blocks; b++)
+  {
+    auto* velocity_feasibility_cost_function_f =
+        VelocityFeasibilityCost::Create(velocity_feasibility_w_, b, num_blocks);
+    problem.AddResidualBlock(velocity_feasibility_cost_function_f, NULL,
+                             optim_velocities[b].params, optim_velocities[b - 1].params);
   }
 
-  for (unsigned int i = 0; i < control_horizon / block_length; i++)
+  for (unsigned int i = 0; i < num_blocks; i++)
   {
     problem.SetParameterLowerBound(optim_velocities[i].params, 0, min_linear_vel_);   // lower bound for linear velocity
     problem.SetParameterUpperBound(optim_velocities[i].params, 0, max_linear_vel_);   // upper bound for linear velocity
@@ -639,13 +653,6 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
   return robot_status;
 }
 
-// we project the people state for each time step of the robot path
-AgentsTrajectories Optimizer::project_people(const AgentsStates& init_people)
-{
-  AgentsTrajectories people_traj;
-  people_traj.push_back(init_people);
-  return people_traj;
-}
 
 Eigen::Vector2d Optimizer::computeObstacle(const Eigen::Vector2d& apos,
                                            const obstacle_distance_msgs::msg::ObstacleDistance& od)

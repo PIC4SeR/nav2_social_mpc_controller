@@ -139,10 +139,12 @@ public:
     robot_agent.col(2) << (T)0.0, (T)0.0, (T)0.0, (T)-1.0, (T)0.0, (T)0.0;  // Set the third column to an invalid state
     for (unsigned int i = 0; i < agents.cols(); i++)              // Iterate through each agent
     {
+      if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
+        continue;
       Eigen::Matrix<T, 6, 1> ag;                                // Create a matrix to hold the agent's state
       ag.col(0) << agents.col(i);  // Set the current state of the agent
       Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
-      wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
+      wp += ceres::sqrt((T)agent_sf.squaredNorm() + (T)1e-12);  // Accumulate the squared norm of the social force on the agent
     }
     T total_social_force_magnitude_sq = wr + wp + (T)1e-6;  // Avoid division by zero
 

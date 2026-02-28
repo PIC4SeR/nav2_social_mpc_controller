@@ -128,10 +128,13 @@ public:
   template <typename T>
   T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, 3>& agents) const
   {
-    T min_distance((T)std::numeric_limits<T>::max());  // Initialize minimum distance to a large value
-    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
-    Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
-                                 me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
+    // Sum exponential proximity costs from all valid agents.
+    // This replaces the previous std::min approach which broke Ceres autodiff
+    // gradient propagation on Jet types. The exponential naturally emphasises
+    // the closest agent while keeping gradients smooth for all agents.
+    T proxemics_cost = T(0.0);
+    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);  // Extract the position of the robot
+    T d0_sq = (T)d0_ * (T)d0_;
 
     for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
@@ -142,14 +145,12 @@ public:
       Eigen::Matrix<T, 2, 1> diff =
           mePos - aPos;                         // Calculate the difference in position between the robot and the agent
       T squared_distance = diff.squaredNorm();  // Calculate the squared distance between the robot and the agent
-      if (squared_distance < 1e-6)              // If the squared distance is too small, set a fixed direction
+      if (squared_distance < T(1e-6))           // Clamp to avoid division issues at zero distance
       {
-        diff = Eigen::Matrix<T, 2, 1>((T)1e-6, (T)0.0);  // Use a fixed small direction
+        squared_distance = T(1e-6);
       }
-      min_distance = std::min(min_distance, squared_distance);  // Update the minimum distance
+      proxemics_cost += (T)alpha_ * ceres::exp(-squared_distance / d0_sq);  // Accumulate exponential decay per agent
     }
-    T proxemics_cost =
-        (T)alpha_ * ceres::exp(-min_distance / ((T)d0_ * (T)d0_));  // Exponential decay based on distance
     return proxemics_cost;
   }
 

@@ -123,6 +123,14 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
   declare_parameter_if_not_declared(node, plugin_name_ + ".use_rotate_to_heading", rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(node, plugin_name_ + ".rotate_to_heading_angular_vel", rclcpp::ParameterValue(0.75));
   declare_parameter_if_not_declared(node, plugin_name_ + ".rotate_to_heading_min_angle", rclcpp::ParameterValue(1.0));
+  // Obstacle avoidance parameters
+  declare_parameter_if_not_declared(node, plugin_name_ + ".use_cost_regulated_linear_velocity_scaling", rclcpp::ParameterValue(true));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".cost_scaling_dist", rclcpp::ParameterValue(0.6));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".cost_scaling_gain", rclcpp::ParameterValue(1.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".inflation_cost_scaling_factor", rclcpp::ParameterValue(3.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".use_collision_detection", rclcpp::ParameterValue(true));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".max_allowed_time_to_collision_up_to_carrot", rclcpp::ParameterValue(1.0));
+  declare_parameter_if_not_declared(node, plugin_name_ + ".projection_lookahead_resolution", rclcpp::ParameterValue(0.1));
   
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
@@ -141,6 +149,21 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
   node->get_parameter(plugin_name_ + ".use_rotate_to_heading", use_rotate_to_heading_);
   node->get_parameter(plugin_name_ + ".rotate_to_heading_angular_vel", rotate_to_heading_angular_vel_);
   node->get_parameter(plugin_name_ + ".rotate_to_heading_min_angle", rotate_to_heading_min_angle_);
+  // Obstacle avoidance parameters
+  bool use_cost_regulated_linear_velocity_scaling{true};
+  double cost_scaling_dist{0.6};
+  double cost_scaling_gain{1.0};
+  double inflation_cost_scaling_factor{3.0};
+  bool use_collision_detection{true};
+  double max_allowed_time_to_collision_up_to_carrot{1.0};
+  double projection_lookahead_resolution{0.1};
+  node->get_parameter(plugin_name_ + ".use_cost_regulated_linear_velocity_scaling", use_cost_regulated_linear_velocity_scaling);
+  node->get_parameter(plugin_name_ + ".cost_scaling_dist", cost_scaling_dist);
+  node->get_parameter(plugin_name_ + ".cost_scaling_gain", cost_scaling_gain);
+  node->get_parameter(plugin_name_ + ".inflation_cost_scaling_factor", inflation_cost_scaling_factor);
+  node->get_parameter(plugin_name_ + ".use_collision_detection", use_collision_detection);
+  node->get_parameter(plugin_name_ + ".max_allowed_time_to_collision_up_to_carrot", max_allowed_time_to_collision_up_to_carrot);
+  node->get_parameter(plugin_name_ + ".projection_lookahead_resolution", projection_lookahead_resolution);
   std::string motion_model_type;
   node->get_parameter(plugin_name_ + ".motion_model_type", motion_model_type);
 
@@ -162,6 +185,14 @@ void PathTrajectorizer::configure(rclcpp_lifecycle::LifecycleNode::WeakPtr paren
   pursuit_params.use_rotate_to_heading = use_rotate_to_heading_;
   pursuit_params.use_interpolation = use_interpolation_;
   pursuit_params.desired_linear_velocity_ = desired_linear_vel_;
+  // Obstacle avoidance params
+  pursuit_params.use_cost_regulated_linear_velocity_scaling = use_cost_regulated_linear_velocity_scaling;
+  pursuit_params.cost_scaling_dist = cost_scaling_dist;
+  pursuit_params.cost_scaling_gain = cost_scaling_gain;
+  pursuit_params.inflation_cost_scaling_factor = inflation_cost_scaling_factor;
+  pursuit_params.use_collision_detection = use_collision_detection;
+  pursuit_params.max_allowed_time_to_collision_up_to_carrot = max_allowed_time_to_collision_up_to_carrot;
+  pursuit_params.projection_lookahead_resolution = projection_lookahead_resolution;
   pure_pursuit_.updateParams(pursuit_params);
 
   // Choose motion model plugin

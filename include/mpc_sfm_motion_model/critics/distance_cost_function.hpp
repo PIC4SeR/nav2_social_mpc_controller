@@ -126,7 +126,7 @@ public:
     // Now compute the residual based on the final state and target point.
     Eigen::Matrix<T, 2, 1> p((T)new_position_x, (T)new_position_y);
     Eigen::Matrix<T, 2, 1> p_target((T)point_[0], (T)point_[1]);
-    residuals[0] = T(weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
+    residuals[0] = T(weight_) * (p - p_target).squaredNorm();
 
     return true;
   }

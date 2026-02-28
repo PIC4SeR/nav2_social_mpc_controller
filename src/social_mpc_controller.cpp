@@ -215,9 +215,12 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
   std::vector<geometry_msgs::msg::TwistStamped> init_cmds = cmds;
 
   // Be careful, path and people must be in the same frame
-  people_msgs::msg::People raw_people = people_interface_->getPeople();
-  people_msgs::msg::People people;
-  people.header = raw_people.header;
+
+  people_msgs::msg::People people = people_interface_->getPeople();
+  if (people.people.empty())
+  {
+    RCLCPP_DEBUG(logger_, "People topic has no detections, skipping social critics");
+  }
 
   if (people.header.frame_id != transformed_plan.header.frame_id)
   {
@@ -239,7 +242,6 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
 
   float ts = trajectorizer_->getTimeStep();
   AgentsTrajectories projected_people;
-
   bool optimized = optimizer_->optimize(traj_path, projected_people, costmap_,cmds, people, speed, ts, global_goal_pose);
   if (!optimized)
   {

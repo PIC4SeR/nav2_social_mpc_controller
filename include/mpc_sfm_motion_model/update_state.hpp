@@ -81,6 +81,8 @@ template <typename T>
       Eigen::Matrix<T, 2, 1> interactionVector =
           (T)sfm_lambda_ * velDiff + diffDirection;  // Calculate the interaction vector
 
+      // To prevent division by zero in the subsequent calculations, we add a small value to the interaction vector.
+      interactionVector+= (T)1e-6 * diffDirection;  // Add a small value to the interaction vector to prevent division by zero
       T interactionLength = interactionVector.norm();  // Calculate the length of the interaction vector
       Eigen::Matrix<T, 2, 1> interactionDirection =
           interactionVector / interactionLength;  // Normalize the interaction vector
@@ -122,8 +124,8 @@ Eigen::Matrix<T, 2, 1> computeinsideDesiredForce(const Eigen::Matrix<T, 6, 1>& m
   Eigen::Matrix<T, 2, 1> meDesiredforce((T)0.0, (T)0.0); 
   T vx = me[4] * ceres::cos(me[2]);  // Extract the x component of the velocity
   T vy = me[4] * ceres::sin(me[2]);  //
-  meDesiredforce(0,0) = -vx * sfm_relaxationTime_;  // Calculate the desired force in the x direction
-  meDesiredforce(1,0) = -vy * sfm_relaxationTime_;  // Calculate the desired force in the y direction
+  meDesiredforce(0,0) = -vx / sfm_relaxationTime_;  // Calculate the desired force in the x direction
+  meDesiredforce(1,0) = -vy / sfm_relaxationTime_;  // Calculate the desired force in the y direction
   return meDesiredforce;
 
 }
@@ -163,15 +165,9 @@ std::tuple<T, T, T, Eigen::Matrix<T,6,3>> computeSFMState(const geometry_msgs::m
   T x = T(pose_0.position.x);
   T y = T(pose_0.position.y);
   T theta = T(tf2::getYaw(pose_0.orientation));
-  //std::array<T,3> agent_x     = { T(agents_zero[0](0,0)), T(agents[1](0,0)), T(agents[2](0,0)) };
-  //std::array<T,3> agent_y     = { T(agents_zero[0](1,0)), T(agents[1](1,0)), T(agents[2](1,0)) };
-  //std::array<T,3> agent_theta = { T(agents_zero[0](2,0)), T(agents[1](2,0)), T(agents[2](2,0)) };
-  //std::vector<T> vx = { T(agents[0](4,0)*ceres::cos(agents[0](2,0))), T(agents[1](4,0)*ceres::cos(agents[1](2,0))),
-  //   T(agents[2](4,0)*ceres::cos(agents[2](2,0))) };
+  
   std::vector<T> vx = { agents_zero(4,0)*ceres::cos(agents_zero(2,0)), agents_zero(4,1)*ceres::cos(agents_zero(2,1)),
-     agents_zero(4,2)*ceres::cos(agents_zero(4,2)) };
-  //std::vector<T> vy = { T(agents[0](4,0)*ceres::sin(agents[0](2,0))), T(agents[1](4,0)*ceres::sin(agents[1](2,0))),
-  //   T(agents[2](4,0)*ceres::sin(agents[2](2,0))) };
+     agents_zero(4,2)*ceres::cos(agents_zero(2,2)) };
   std::vector<T> vy = { agents_zero(4,0)*ceres::sin(agents_zero(2,0)), agents_zero(4,1)*ceres::sin(agents_zero(2,1)),
      agents_zero(4,2)*ceres::sin(agents_zero(2,2)) };
   Eigen::Matrix<T, 6, 3> agents_updating = agents_zero;
@@ -220,15 +216,18 @@ std::tuple<T, T, T, Eigen::Matrix<T,6,3>> computeSFMState(const geometry_msgs::m
       T init_yaw = ag(2, 0);
       ag(0, 0) += vx[i] * dt; // Update the agent's x position based on the social force
       ag(1, 0) += vy[i] * dt; // Update the agent's y position based on the social force
-      ag(2, 0)  = ceres::atan2(vy[i], vx[i]); // Update the agent's orientation based on the new position
+      T eps = T(1e-8);
+      T safe_vx = vx[i] + eps*ceres::cos(init_yaw);
+      T safe_vy = vy[i] + eps*ceres::sin(init_yaw);
+      T new_yaw = ceres::atan2(safe_vy, safe_vx); // Calculate the new orientation based on the updated velocity
+      
+      ag(2, 0)  = new_yaw; // Update the agent's orientation based on the new velocity
       ag(3, 0) = T(0); // Reset time to 0 for the agent
-      ag(4, 0) = ceres::sqrt(vx[i]*vx[i] + vy[i]*vy[i]); // Update the agent's linear velocity (norm of velocity vector)
-      ag(5, 0) = (ceres::atan2(vy[i], vx[i])- init_yaw) / dt; // Update the agent's angular velocity based on the new orientation
+      ag(4, 0) = ceres::sqrt(vx[i]*vx[i] + vy[i]*vy[i] + eps*eps); // Update the agent's linear velocity (norm of velocity vector)
+      ag(5, 0) = (new_yaw - init_yaw) / dt; // Update the agent's angular velocity based on the new orientation
       agents_updating.col(i) = ag; // Update the agent's state in the matrix
     }
-    //x_vec.push_back(x);
-    //y_vec.push_back(y);
-    //theta_vec.push_back(theta);
+    
   }
 
   return std::make_tuple(x, y, theta, agents_updating);

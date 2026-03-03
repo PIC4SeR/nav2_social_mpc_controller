@@ -36,7 +36,7 @@ CrossingCost::CrossingCost(double weight, double bearing_weight,
     original_agents_.col(j) << agents_init[j][0], agents_init[j][1], agents_init[j][2], agents_init[j][3],
         agents_init[j][4], agents_init[j][5];
   }
-  safe_distance_squared_ = 36.0;  // 6 m — react early enough to steer behind
+  safe_distance_squared_ = 16.0;  // 6 m — react early enough to steer behind
 }
 
 }  // namespace mpc_sfm_motion_model

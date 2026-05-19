@@ -338,6 +338,16 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   const AgentsStates& people_states_for_cost = (!people_proj.empty() ? people_proj.front() : fallback_agents);
 
+  // Social-comfort costs are only meaningful for moving agents. Stationary agents
+  // are already penalised geometrically via costmap inflation and agent_obstacle_weight;
+  // adding proxemics/social-work on top causes a deadlock in narrow passages.
+  AgentsStates social_people_states = people_states_for_cost;
+  for (auto& agent : social_people_states)
+  {
+    if (agent[3] != -1.0 && agent[4] < stationary_agent_speed_threshold_)
+      agent[3] = -1.0;
+  }
+
   std::vector<dynamic_optimizing_velocities> variables_to_optimize;
   variables_to_optimize.reserve(optim_status.size());
   for (unsigned int j = 0; j < optim_status.size(); ++j)
@@ -444,7 +454,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       if (use_social_work_cost_)
       {
         auto* social_work_function_f =
-            SocialWorkCost::Create(socialwork_w_, people_states_for_cost, evolving_poses[0].pose, counter_step, i,
+            SocialWorkCost::Create(socialwork_w_, social_people_states, evolving_poses[0].pose, counter_step, i,
                                    time_step, control_horizon, block_length, active_blocks, has_agent_parameters,
                                    num_agents);
         add_enlarged_parameter_blocks(social_work_function_f, active_blocks, has_agent_parameters, num_agents);
@@ -454,7 +464,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       if (use_social_angle_cost_)
       {
         auto* agent_angle_function_f =
-            AgentAngleCost::Create(agent_angle_w_, velocity_alignment_w_, people_states_for_cost,
+            AgentAngleCost::Create(agent_angle_w_, velocity_alignment_w_, social_people_states,
                                    evolving_poses[0].pose, i, time_step, control_horizon, block_length, active_blocks,
                                    has_agent_parameters, num_agents);
         add_enlarged_parameter_blocks(agent_angle_function_f, active_blocks, has_agent_parameters, num_agents);
@@ -464,7 +474,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       if (use_social_crossing_cost_)
       {
         auto* crossing_function_f =
-            CrossingCost::Create(crossing_w_, crossing_bearing_w_, people_states_for_cost, evolving_poses[0].pose, i,
+            CrossingCost::Create(crossing_w_, crossing_bearing_w_, social_people_states, evolving_poses[0].pose, i,
                                  time_step, control_horizon, block_length, active_blocks, has_agent_parameters,
                                  num_agents);
         add_enlarged_parameter_blocks(crossing_function_f, active_blocks, has_agent_parameters, num_agents);

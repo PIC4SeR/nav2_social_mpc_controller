@@ -226,6 +226,16 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   AgentsStates init_people = people_to_status(people);
   RCLCPP_DEBUG(rclcpp::get_logger("optimizer"), "Optimizing trajectory with %zu people", people_proj.size());
 
+  // Social-comfort costs are only meaningful for moving agents. Stationary agents
+  // are already penalised geometrically via costmap inflation; adding proxemics/
+  // social-work on top causes a deadlock in narrow passages.
+  AgentsStates social_people = init_people;
+  for (auto& agent : social_people)
+  {
+    if (agent[3] != -1.0 && agent[4] < stationary_agent_speed_threshold_)
+      agent[3] = -1.0;
+  }
+
   // Path has always at least 2 points
   if (path.poses.size() < 2)
   {
@@ -245,16 +255,18 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   // in order to use them as a starting point for the optimization
   // i do not know if this works as expected, but it should
   auto& memory = TrajectoryMemory::getInstance();
-
-  // if no previous path is set, set the current path and commands as the previous ones
-  if (memory.previous_path.poses.size() == 0)
+  nav_msgs::msg::Path previous_path;
+  std::vector<geometry_msgs::msg::TwistStamped> previous_cmds;
   {
-    memory.previous_path = path;
-    memory.previous_cmds = cmds;
+    std::lock_guard<std::mutex> lock(memory.mtx);
+    if (memory.previous_path.poses.empty())
+    {
+      memory.previous_path = path;
+      memory.previous_cmds = cmds;
+    }
+    previous_path = memory.previous_path;
+    previous_cmds = memory.previous_cmds;
   }
-
-  nav_msgs::msg::Path previous_path = memory.previous_path;
-  std::vector<geometry_msgs::msg::TwistStamped> previous_cmds = memory.previous_cmds;
 
   // use the projected path to make it into the a parametrized format
   AgentsStates optim_status = format_to_optimize(path, previous_path, cmds, previous_cmds, speed, current_path_w,
@@ -335,7 +347,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
       if (use_social_work_cost_)
       {
-        auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, init_people, evolving_poses[0].pose,
+        auto* social_work_function_f = SocialWorkCost::Create(socialwork_w_, social_people, evolving_poses[0].pose,
                                                               counter_step, i, time_step, control_horizon, block_length);
         for (unsigned int j = 0; j < num_param_blocks; j++)
           social_work_function_f->AddParameterBlock(2);
@@ -345,7 +357,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
       if (use_social_angle_cost_)
       {
-        auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, velocity_alignment_w_, init_people, evolving_poses[0].pose,
+        auto* agent_angle_function_f = AgentAngleCost::Create(agent_angle_w_, velocity_alignment_w_, social_people, evolving_poses[0].pose,
                                                               i, time_step, control_horizon, block_length);
         for (unsigned int j = 0; j < num_param_blocks; j++)
           agent_angle_function_f->AddParameterBlock(2);
@@ -356,7 +368,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       if (use_social_crossing_cost_)
       {
         auto* crossing_function_f = CrossingCost::Create(crossing_w_, crossing_bearing_w_,
-                                                          init_people, evolving_poses[0].pose,
+                                                          social_people, evolving_poses[0].pose,
                                                           i, time_step, control_horizon, block_length);
         for (unsigned int j = 0; j < num_param_blocks; j++)
           crossing_function_f->AddParameterBlock(2);
@@ -366,7 +378,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
       if (use_social_proxemics_cost_)
       {
-        auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, init_people, evolving_poses[0].pose,
+        auto* proxemics_function_f = ProxemicsCost::Create(proxemics_w_, social_people, evolving_poses[0].pose,
                                                            counter_step, i, time_step, control_horizon, block_length);
         for (unsigned int j = 0; j < num_param_blocks; j++)
           proxemics_function_f->AddParameterBlock(2);
@@ -550,8 +562,11 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     path.poses.push_back(pose_old);
   }
 
-  memory.previous_path = path;
-  memory.previous_cmds = cmds;
+  {
+    std::lock_guard<std::mutex> lock(memory.mtx);
+    memory.previous_path = path;
+    memory.previous_cmds = cmds;
+  }
 
   return true;
 }
@@ -617,7 +632,8 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
                             (1.0 - current_path_w) * previous_path.poses[i].pose.position.y;
       double yaw_current = tf2::getYaw(path.poses[i].pose.orientation);
       double yaw_prev = tf2::getYaw(previous_path.poses[i].pose.orientation);
-      double smoothed_yaw = current_path_w * yaw_current + (1.0 - current_path_w) * yaw_prev;
+      double yaw_diff = std::atan2(std::sin(yaw_current - yaw_prev), std::cos(yaw_current - yaw_prev));
+      double smoothed_yaw = yaw_prev + static_cast<double>(current_path_w) * yaw_diff;
       tf2::Quaternion q;
       q.setRPY(0, 0, smoothed_yaw);
       smoothed.orientation = tf2::toMsg(q);
@@ -637,78 +653,24 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
       r(4, 0) = speed.linear.x;
       r(5, 0) = speed.angular.z;
     }
+    else if (i - 1 < cmds.size())
+    {
+      const double lv_curr = cmds[i - 1].twist.linear.x;
+      const double av_curr = cmds[i - 1].twist.angular.z;
+      const double lv_prev = (i - 1 < previous_cmds.size()) ? previous_cmds[i - 1].twist.linear.x : lv_curr;
+      const double av_prev = (i - 1 < previous_cmds.size()) ? previous_cmds[i - 1].twist.angular.z : av_curr;
+      r(4, 0) = current_cmds_w * lv_curr + (1.0 - current_cmds_w) * lv_prev;
+      r(5, 0) = current_cmds_w * av_curr + (1.0 - current_cmds_w) * av_prev;
+    }
     else
     {
-      geometry_msgs::msg::TwistStamped cmd_smoothed;
-      cmd_smoothed.twist.linear.x =
-          current_cmds_w * cmds[i - 1].twist.linear.x + (1.0 - current_cmds_w) * previous_cmds[i - 1].twist.linear.x;
-      cmd_smoothed.twist.angular.z =
-          current_cmds_w * cmds[i - 1].twist.angular.z + (1.0 - current_cmds_w) * previous_cmds[i - 1].twist.angular.z;
-      //  Robot vel
-      r(4, 0) = cmd_smoothed.twist.linear.x;
-      r(5, 0) = cmd_smoothed.twist.angular.z;
+      r(4, 0) = robot_status.empty() ? 0.0 : robot_status.back()(4, 0);
+      r(5, 0) = robot_status.empty() ? 0.0 : robot_status.back()(5, 0);
     }
     robot_status.push_back(r);
   }
   return robot_status;
 }
 
-
-Eigen::Vector2d Optimizer::computeObstacle(const Eigen::Vector2d& apos,
-                                           const obstacle_distance_msgs::msg::ObstacleDistance& od)
-{
-  if (od.distances.empty() || od.indexes.empty())
-  {
-    throw std::runtime_error("ObstacleDistance grid is empty");
-  }
-  if (od.info.width <= 0 || od.info.height <= 0)
-  {
-    throw std::runtime_error("ObstacleDistance grid has invalid size");
-  }
-  if (od.info.resolution <= 0.0)
-  {
-    throw std::runtime_error("ObstacleDistance grid has invalid resolution");
-  }
-
-  // map point (person) to cell in the distance grid
-  unsigned int xcell = (unsigned int)floor((apos[0] - od.info.origin.position.x) / od.info.resolution);
-  unsigned int ycell = (unsigned int)floor((apos[1] - od.info.origin.position.y) / od.info.resolution);
-  // cell to index of the array
-
-  if (xcell >= (unsigned int)od.info.width || ycell >= (unsigned int)od.info.height)
-  {
-    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"), "ObstacleDistance grid cell out of bounds: xcell="
-                                                             << xcell << ", ycell=" << ycell << ", width="
-                                                             << od.info.width << ", height=" << od.info.height);
-    throw std::runtime_error("ObstacleDistance grid cell out of bounds");
-  }
-
-  unsigned int index = xcell + ycell * od.info.width;
-
-  float dist = od.distances[index];  // not used
-  unsigned int ob_idx = od.indexes[index];
-
-  if (ob_idx >= od.info.width * od.info.height)
-  {
-    RCLCPP_ERROR_STREAM(rclcpp::get_logger("optimizer"),
-                        "ObstacleDistance grid index out of bounds: ob_idx=" << ob_idx << ", width=" << od.info.width
-                                                                             << ", height=" << od.info.height);
-    throw std::runtime_error("ObstacleDistance grid index out of bounds");
-  }
-  // const div_t result = div(ob_idx, (int)od.info.width);
-  ycell = floor(ob_idx / od.info.width);
-  xcell = ob_idx % od.info.width;
-
-  // cell to world point (obstacle)
-  float x = xcell * od.info.resolution + od.info.origin.position.x;
-  float y = ycell * od.info.resolution + od.info.origin.position.y;
-  Eigen::Vector2d obstacle(x, y);
-
-  // vector between person and obstacle
-  Eigen::Vector2d diff = apos - obstacle;
-
-  RCLCPP_DEBUG(rclcpp::get_logger("optimizer"), "Obstacle at (%f, %f) with distance %f", x, y, dist);
-  return diff;
-}
 
 }  // namespace mpc_sfm_motion_model

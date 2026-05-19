@@ -152,28 +152,39 @@ void MPCSFMMotionModel::publish_people_traj(const AgentsTrajectories& people, co
     }
   }
 
-  for (unsigned int stepi = 0; stepi < people.size(); stepi++)
+  // Build a stable mapping from agent index to marker index based on t=0 validity
+  std::vector<int> agent_to_marker(npeople, -1);
   {
     int mi = 0;
+    for (size_t idx = 0; idx < npeople; idx++)
+    {
+      if (people[0][idx][3] != -1.0)
+      {
+        agent_to_marker[idx] = mi++;
+      }
+    }
+  }
+
+  for (unsigned int stepi = 0; stepi < people.size(); stepi++)
+  {
     if (people[stepi].empty())
     {
       continue;
     }
-    for (unsigned int personi = 0; personi < people[stepi].size(); personi++)
+    for (unsigned int personi = 0; personi < people[stepi].size() && personi < npeople; personi++)
     {
+      int mi = agent_to_marker[personi];
+      if (mi < 0 || mi >= static_cast<int>(ma.markers.size()))
+      {
+        continue;
+      }
       if (people[stepi][personi][3] != -1.0)
       {
-        if (mi >= static_cast<int>(ma.markers.size()))
-        {
-          // No pre-created marker for this index; skip to avoid out-of-range access
-          continue;
-        }
         geometry_msgs::msg::Point point;
         point.x = people[stepi][personi][0];
         point.y = people[stepi][personi][1];
         point.z = 0.1;
         ma.markers[mi].points.push_back(point);
-        mi++;
       }
     }
   }
@@ -262,7 +273,14 @@ geometry_msgs::msg::TwistStamped MPCSFMMotionModel::computeVelocityCommands(
   // populate and return twist message
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = cmds[0].header;
-  double linear_cmd = std::clamp(cmds[0].twist.linear.x, -max_linear_vel_, max_linear_vel_);
+  double effective_max_vel = max_linear_vel_;
+  if (speed_limit_ > 0.0) {
+    effective_max_vel = speed_limit_as_percentage_
+                          ? max_linear_vel_ * speed_limit_ / 100.0
+                          : speed_limit_;
+    effective_max_vel = std::min(effective_max_vel, max_linear_vel_);
+  }
+  double linear_cmd = std::clamp(cmds[0].twist.linear.x, -effective_max_vel, effective_max_vel);
   if (std::abs(linear_cmd) > 1e-6 && std::abs(linear_cmd) < min_linear_vel_)
   {
     linear_cmd = std::copysign(min_linear_vel_, linear_cmd);
@@ -281,20 +299,10 @@ void MPCSFMMotionModel::setPlan(const nav_msgs::msg::Path& path)
 
 void MPCSFMMotionModel::setSpeedLimit(const double& speed_limit, const bool& percentage)
 {
-  double speed_limit_ = speed_limit;
-  bool percentage_ = percentage;
-  double throwaway_vel = 1;
-  if (percentage_)
-  {
-    throwaway_vel *= (speed_limit_ / 100.0);
-    RCLCPP_DEBUG(logger_, "Speed limit set as percentage: %f%%, resulting speed: %f", speed_limit_,
-                  throwaway_vel);
-  }
-  else
-  {
-    throwaway_vel = speed_limit_;
-    RCLCPP_DEBUG(logger_, "Speed limit set as absolute value: %f", throwaway_vel);
-  }
+  speed_limit_ = speed_limit;
+  speed_limit_as_percentage_ = percentage;
+  RCLCPP_DEBUG(logger_, "Speed limit updated: %f (%s)", speed_limit_,
+               speed_limit_as_percentage_ ? "percentage" : "absolute");
 }
 
 bool MPCSFMMotionModel::transformPose(const std::string frame, const geometry_msgs::msg::PoseStamped& in_pose,

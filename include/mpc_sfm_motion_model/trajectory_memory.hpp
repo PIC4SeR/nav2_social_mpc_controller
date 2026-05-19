@@ -2,6 +2,7 @@
 #define MPC_SFM_MOTION_MODEL__TRAJECTORY_MEMORY_HPP_
 
 #include <math.h>
+#include <mutex>
 
 #include <algorithm>
 #include <cmath>
@@ -38,9 +39,9 @@ public:
     return instance;
   }
 
+  std::mutex mtx;
   nav_msgs::msg::Path previous_path;
   std::vector<geometry_msgs::msg::TwistStamped> previous_cmds;
-  // bool is_initialized = false;
 
 private:
   TrajectoryMemory()

@@ -220,14 +220,6 @@ private:
                                      const float current_cmds_w, const float maxtime, const float timestep);
 
 
-  /**
-   * @brief Compute obstacle position relative to agent
-   * @param apos Agent position
-   * @param od Obstacle distances
-   * @return Vector to obstacle
-   */
-  Eigen::Vector2d computeObstacle(const Eigen::Vector2d& apos, const obstacle_distance_msgs::msg::ObstacleDistance& od);
-
   bool debug_;
   unsigned int control_horizon_;
   unsigned int parameter_block_length_;
@@ -268,7 +260,6 @@ private:
   int max_agents_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
-  std::shared_ptr<ceres::Grid2D<float>> obs_grid_;
   std::string frame_;
   rclcpp::Time path_time_;
 };

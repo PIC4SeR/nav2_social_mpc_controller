@@ -39,11 +39,7 @@ namespace mpc_sfm_motion_model
 template <typename T>
   inline T wrapinsideToPi(T angle)
   {
-    while (angle > T(M_PI))
-      angle -= T(2.0 * M_PI);
-    while (angle <= T(-M_PI))
-      angle += T(2.0 * M_PI);
-    return angle;
+    return angle - T(2.0 * M_PI) * ceres::floor((angle + T(M_PI)) / T(2.0 * M_PI));
   }
 template <typename T>
   Eigen::Matrix<T, 2, 1> computeinsideSocialForce(const Eigen::Matrix<T, 6, 1>& me,

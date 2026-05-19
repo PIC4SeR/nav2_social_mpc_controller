@@ -86,6 +86,13 @@ public:
   AgentAngleCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                  unsigned int current_position, double time_step, unsigned int control_horizon,
                  unsigned int block_length);
+  AgentAngleCost(double weight, double velocity_alignment_weight, const AgentsStates& agents_init,
+                 const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
+                 unsigned int control_horizon, unsigned int block_length);
+  AgentAngleCost(double weight, double velocity_alignment_weight, const AgentsStates& agents_init,
+                 const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
+                 unsigned int control_horizon, unsigned int block_length, unsigned int parameter_block_count,
+                 bool has_agent_parameters, unsigned int agent_count);
 
   /**
     * @brief Creates a Ceres cost function for the AgentAngleCost.
@@ -112,6 +119,19 @@ public:
                                                          control_horizon, block_length));
   }
 
+  inline static AgentAngleCostFunction* Create(double weight, double velocity_alignment_weight,
+                                               const AgentsStates& agents_init,
+                                               const geometry_msgs::msg::Pose& robot_init,
+                                               unsigned int current_position, double time_step,
+                                               unsigned int control_horizon, unsigned int block_length,
+                                               unsigned int parameter_block_count, bool has_agent_parameters,
+                                               unsigned int agent_count)
+  {
+    return new AgentAngleCostFunction(new AgentAngleCost(weight, velocity_alignment_weight, agents_init, robot_init,
+                                                         current_position, time_step, control_horizon, block_length,
+                                                         parameter_block_count, has_agent_parameters, agent_count));
+  }
+
   /**
    * @brief Operator to compute the cost based on the robot's state and agent positions.
    * @param T The type used for automatic differentiation (typically a double or Jet type from Ceres).
@@ -126,21 +146,24 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residuals) const
   {
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-        robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
-
-    
+    auto [new_position_x, new_position_y, new_position_orientation, agents] =
+        computeEnlargedState(robot_init_, agents_init_, parameters, parameter_block_count_, has_agent_parameters_,
+                             agent_count_, time_step_, current_position_, control_horizon_, block_length_);
     int closest_index = -1;
-    double closest_distance_squared = std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < agents_init_.size(); ++i)
+    T closest_distance_squared = T(9999.0);
+    for (Eigen::Index i = 0; i < agents.cols(); ++i)
     {
-      double dx = agents_init_[i][0] - robot_init_.position.x;
-      double dy = agents_init_[i][1] - robot_init_.position.y;
-      double distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents_init_[i][4] > 0.05)
+      if (agents(3, i) == T(-1.0))
+      {
+        continue;
+      }
+      T dx = agents(0, i) - new_position_x;
+      T dy = agents(1, i) - new_position_y;
+      T distance_squared = dx * dx + dy * dy;
+      if (distance_squared < closest_distance_squared && agents(4, i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
-        closest_index = i;
+        closest_index = static_cast<int>(i);
       }
     }
     if (closest_index < 0 || closest_distance_squared > safe_distance_squared_)
@@ -148,63 +171,33 @@ public:
       residuals[0] = T(0.0);
       return true;
     }
-    AgentStatus closest_agent;
-    closest_agent = agents_init_[closest_index];
-    const auto& agent = closest_agent;
-    // Compute angles.
-    T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
-    T robot_yaw = T(tf2::getYaw(robot_init_.orientation));
-    // Difference between agent's heading and the robot's initial orientation.
-    T agent_heading_diff = ceres::atan2(ceres::sin(T(agent[2]) - robot_yaw), ceres::cos(T(agent[2]) - robot_yaw));
-    // Helper to wrap angles into [-pi, pi].
-    auto wrapAngle = [](const T& angle) -> T { return ceres::atan2(ceres::sin(angle), ceres::cos(angle)); };
-
-    // --- Define angular thresholds and offsets ---
-    // Thresholds.
-    const T kThreshold = T(M_PI / 6.0);
-    const T kUpperThreshold = T(5 * M_PI / 6.0);
-    const T steering_right = -T(M_PI / 6.0);
-    const T steering_left = T(M_PI / 6.0);
-    T angular_diff;
-
-    if (agent_heading_diff <= -kUpperThreshold || agent_heading_diff >= kThreshold)
-    {
-      if (wrapAngle(agent_angle_initial - robot_yaw) < 0.0)
-      {
-        residuals[0] = T(0.0);
-        return true;
-      }
-      else
-      {
-        angular_diff = wrapAngle(new_position_orientation - (robot_yaw + steering_right));
-      }
-    }
-
-    else
-    {
-      if (wrapAngle(agent_angle_initial - robot_yaw) > 0.0)
-      {
-        residuals[0] = T(0.0);
-        return true;
-      }
-      else
-      {
-        angular_diff = wrapAngle(new_position_orientation - (robot_yaw + steering_left));
-      }
-    }
-    T cost = angular_diff * angular_diff;
-    residuals[0] = weight_ * cost;
+    T angle_to_agent = ceres::atan2(agents(1, closest_index) - new_position_y,
+                                    agents(0, closest_index) - new_position_x);
+    T rel_angle = ceres::atan2(ceres::sin(angle_to_agent - new_position_orientation),
+                               ceres::cos(angle_to_agent - new_position_orientation));
+    T alignment = ceres::cos(rel_angle);
+    T k = T(5.0);
+    T active = ceres::log(T(1.0) + ceres::exp(k * alignment)) / k;
+    T dist_decay = ceres::exp(-closest_distance_squared / T(safe_distance_squared_));
+    T agent_heading = agents(2, closest_index);
+    T velocity_alignment = ceres::cos(new_position_orientation - agent_heading);
+    T velocity_active = ceres::log(T(1.0) + ceres::exp(k * velocity_alignment)) / k;
+    residuals[0] = T(weight_) * dist_decay * (active + T(velocity_alignment_weight_) * velocity_active);
     return true;
   }
 
 private:
   double weight_;
+  double velocity_alignment_weight_;
   AgentsStates agents_init_;
   geometry_msgs::msg::Pose robot_init_;
   unsigned int current_position_;
   double time_step_;
   unsigned int control_horizon_;
   unsigned int block_length_;
+  unsigned int parameter_block_count_;
+  bool has_agent_parameters_;
+  unsigned int agent_count_;
   double safe_distance_squared_;
 };
 

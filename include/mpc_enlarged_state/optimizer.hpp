@@ -37,14 +37,17 @@
 
 // cost functions
 #include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/agent_obstacle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/agent_sfm_dynamics_cost_function.hpp"
+#include "mpc_enlarged_state/critics/agent_velocity_reference_cost_function.hpp"
 #include "mpc_enlarged_state/critics/angle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/crossing_cost_function.hpp"
 #include "mpc_enlarged_state/critics/curvature_cost_function.hpp"
 #include "mpc_enlarged_state/critics/distance_cost_function.hpp"
 #include "mpc_enlarged_state/critics/goal_align_cost_function.hpp"
 #include "mpc_enlarged_state/critics/goal_proximity_cost_function.hpp"
 #include "mpc_enlarged_state/critics/obstacle_cost_function.hpp"
 #include "mpc_enlarged_state/critics/social_work_cost_function.hpp"
-#include "mpc_enlarged_state/critics/overall_social_cost_function.hpp"
 #include "mpc_enlarged_state/critics/velocity_cost_function.hpp"
 #include "mpc_enlarged_state/critics/velocity_feasibility_cost_function.hpp"
 #include "mpc_enlarged_state/critics/proxemics_cost_function.hpp"
@@ -89,7 +92,13 @@ struct OptimizerParams
   double velocity_w_;
   double angle_w_;
   double agent_angle_w_;
+  double velocity_alignment_w_;
+  double crossing_w_;
+  double crossing_bearing_w_;
   double velocity_feasibility_w_;
+  double agent_velocity_reference_w_;
+  double agent_sfm_dynamics_w_;
+  double agent_obstacle_w_;
   double goal_align_w_;
   double obstacle_w_;
   double proxemics_w_;
@@ -101,6 +110,7 @@ struct OptimizerParams
   double adaptive_velocity_min_scale_;
   bool use_social_work_cost;
   bool use_social_angle_cost;
+  bool use_social_crossing_cost;
   bool use_social_proxemics_cost;
   bool use_social_path_follow_cost;
   bool use_social_path_align_cost;
@@ -119,6 +129,10 @@ struct OptimizerParams
   double min_angular_vel;
   double desired_linear_vel;
   double agent_velocity_bound;
+  double agent_max_accel;
+  double agent_track_timeout;
+  double agent_coast_decay_time;
+  double agent_association_radius;
   double stationary_agent_velocity_bound;
   double stationary_agent_speed_threshold;
 };
@@ -242,7 +256,7 @@ private:
    * @param people People messages
    * @return Vector of agent statuses
    */
-  AgentsStates people_to_status(const people_msgs::msg::People& people);
+  AgentsStates people_to_status(const people_msgs::msg::People& people, double time_step);
 
   /**
    * @brief Format path and commands for optimization
@@ -263,13 +277,26 @@ private:
                                      const geometry_msgs::msg::Twist& speed, const float current_path_w,
                                      const float current_cmds_w, const float maxtime, const float timestep);
 
+  struct TrackedAgent
+  {
+    AgentStatus state;
+    double last_seen_time{0.0};
+    double last_update_time{0.0};
+  };
+
   bool debug_;
   unsigned int control_horizon_;
   unsigned int parameter_block_length_;
   float max_time;
   double obstacle_w_;
   double velocity_feasibility_w_;
+  double agent_velocity_reference_w_;
+  double agent_sfm_dynamics_w_;
+  double agent_obstacle_w_;
   double agent_angle_w_;
+  double velocity_alignment_w_;
+  double crossing_w_;
+  double crossing_bearing_w_;
   double angle_w_;
   double distance_w_;
   double socialwork_w_;
@@ -286,6 +313,7 @@ private:
   double adaptive_velocity_min_scale_;
   bool use_social_work_cost_{true};
   bool use_social_angle_cost_{true};
+  bool use_social_crossing_cost_{false};
   bool use_social_proxemics_cost_{true};
   bool use_social_path_follow_cost_{true};
   bool use_social_path_align_cost_{true};
@@ -297,14 +325,20 @@ private:
   double min_angular_vel_;
   double desired_linear_vel_;
   double agent_velocity_bound_;
+  double agent_max_accel_;
+  double agent_track_timeout_;
+  double agent_coast_decay_time_;
+  double agent_association_radius_;
   double stationary_agent_velocity_bound_;
   double stationary_agent_speed_threshold_;
   ceres::Solver::Options options_;
   std::shared_ptr<ceres::Grid2D<u_char>> costmap_grid_;
-  std::shared_ptr<ceres::Grid2D<float>> obs_grid_;
   std::string frame_;
   rclcpp::Time path_time_;
   size_t max_agents_;
+  std::vector<TrackedAgent> tracked_agents_;
+  bool have_tracking_time_{false};
+  double last_tracking_time_{0.0};
 };
 
 }  // namespace mpc_enlarged_state

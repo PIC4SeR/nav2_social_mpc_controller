@@ -41,6 +41,10 @@ public:
   ProxemicsCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                 const double counter, unsigned int current_position, double time_step, unsigned int control_horizon,
                 unsigned int block_length);
+  ProxemicsCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
+                const double counter, unsigned int current_position, double time_step, unsigned int control_horizon,
+                unsigned int block_length, unsigned int parameter_block_count, bool has_agent_parameters,
+                unsigned int agent_count);
 
   /**
    * @brief Creates a Ceres cost function for the ProxemicsCost.
@@ -70,6 +74,18 @@ public:
                                                        time_step, control_horizon, block_length));
   }
 
+  inline static ProxemicsCostFunction* Create(double weight, const AgentsStates& agents_init,
+                                              const geometry_msgs::msg::Pose& robot_init, const double counter,
+                                              unsigned int current_position, double time_step,
+                                              unsigned int control_horizon, unsigned int block_length,
+                                              unsigned int parameter_block_count, bool has_agent_parameters,
+                                              unsigned int agent_count)
+  {
+    return new ProxemicsCostFunction(new ProxemicsCost(weight, agents_init, robot_init, counter, current_position,
+                                                       time_step, control_horizon, block_length,
+                                                       parameter_block_count, has_agent_parameters, agent_count));
+  }
+
   /**
    * @brief operator() computes the residual for the social work cost function.
    *
@@ -83,26 +99,19 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residual) const
   {
-    // Compute robot social work
-    Eigen::Matrix<T, 6, 3> agents = original_agents_.template cast<T>();  // Convert original agents to type T
     Eigen::Matrix<T, 6, 1> robot;
-
-    auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
-        robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);  // Update robot state
+    auto [new_position_x, new_position_y, new_position_orientation, agents] =
+        computeEnlargedState(robot_init_, agents_init_, parameters, parameter_block_count_, has_agent_parameters_,
+                             agent_count_, time_step_, current_position_, control_horizon_, block_length_);
     robot(0, 0) = (T)new_position_x;                                                               // x
     robot(1, 0) = (T)new_position_y;                                                               // y
     robot(2, 0) = (T)new_position_orientation;                                                     // yaw
     robot(3, 0) = (T)counter_;                                                                     // t
-    if (current_position_ < control_horizon_)
-    {
-      robot(4, 0) = parameters[current_position_ / block_length_][0];  // lv
-      robot(5, 0) = parameters[current_position_ / block_length_][1];  // av
-    }
-    else
-    {
-      robot(4, 0) = parameters[(control_horizon_ - 1) / block_length_][0];  // lv
-      robot(5, 0) = parameters[(control_horizon_ - 1) / block_length_][1];  // av
-    }
+    unsigned int block_idx = current_position_ < control_horizon_ ? current_position_ / block_length_ :
+                                                                 (control_horizon_ - 1) / block_length_;
+    block_idx = std::min(block_idx, parameter_block_count_ - 1);
+    robot(4, 0) = parameters[block_idx][0];  // lv
+    robot(5, 0) = parameters[block_idx][1];  // av
 
     T proxemics_cost = computeProxemics(robot, agents);  // Compute proxemics cost on robot
     residual[0] = (T)weight_ * proxemics_cost;           // Scale the proxemics cost by the weight
@@ -123,14 +132,14 @@ public:
    * @return T the computed proxemics cost
    */
   template <typename T>
-  T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, 3>& agents) const
+  T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
   {
     T min_distance((T)std::numeric_limits<T>::max());  // Initialize minimum distance to a large value
     Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
     Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
                                  me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
 
-    for (unsigned int i = 0; i < agents.cols(); i++)  // Iterate through each agent
+    for (Eigen::Index i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
       if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
         continue;
@@ -152,13 +161,16 @@ public:
 
 private:
   double weight_;
-  Eigen::Matrix<double, 6, 3> original_agents_;
+  AgentsStates agents_init_;
   geometry_msgs::msg::Pose robot_init_;
   double counter_;
   unsigned int current_position_;
   double time_step_;
   unsigned int control_horizon_;
   unsigned int block_length_;
+  unsigned int parameter_block_count_;
+  bool has_agent_parameters_;
+  unsigned int agent_count_;
   double d0_;     // Minimum distance for proxemics cost
   double alpha_;  // Scaling factor for the proxemics cost
 };

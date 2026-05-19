@@ -104,6 +104,53 @@ private:
   unsigned int current_position_;  ///< The current position index within the control horizon.
 };
 
+class AgentVelocityFeasibilityCost
+{
+public:
+  using AgentVelocityFeasibilityCostFunction = ceres::DynamicAutoDiffCostFunction<AgentVelocityFeasibilityCost>;
+
+  AgentVelocityFeasibilityCost(double weight, unsigned int current_position, unsigned int control_horizon,
+                               unsigned int agent_count);
+
+  inline static AgentVelocityFeasibilityCostFunction* Create(double weight, unsigned int current_position,
+                                                             unsigned int control_horizon, unsigned int agent_count)
+  {
+    return new AgentVelocityFeasibilityCostFunction(
+        new AgentVelocityFeasibilityCost(weight, current_position, control_horizon, agent_count));
+  }
+
+  template <typename T>
+  bool operator()(T const* const* agent_blocks, T* residual) const
+  {
+    for (unsigned int agent_idx = 0; agent_idx < agent_count_; ++agent_idx)
+    {
+      residual[agent_idx] = T(0.0);
+    }
+
+    if (current_position_ >= control_horizon_)
+    {
+      return true;
+    }
+
+    const T* const current_block = agent_blocks[0];
+    const T* const previous_block = agent_blocks[1];
+    for (unsigned int agent_idx = 0; agent_idx < agent_count_; ++agent_idx)
+    {
+      const unsigned int idx = 2 * agent_idx;
+      const T x_vel_diff = current_block[idx] - previous_block[idx];
+      const T y_vel_diff = current_block[idx + 1] - previous_block[idx + 1];
+      residual[agent_idx] = T(weight_) * x_vel_diff * x_vel_diff + T(weight_) * y_vel_diff * y_vel_diff;
+    }
+    return true;
+  }
+
+private:
+  double weight_;
+  unsigned int control_horizon_;
+  unsigned int current_position_;
+  unsigned int agent_count_;
+};
+
 }  // namespace mpc_enlarged_state
 
 #endif

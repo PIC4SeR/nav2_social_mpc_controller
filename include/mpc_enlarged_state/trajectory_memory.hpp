@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -38,9 +39,9 @@ public:
     return instance;
   }
 
+  std::mutex mtx;
   nav_msgs::msg::Path previous_path;
   std::vector<geometry_msgs::msg::TwistStamped> previous_cmds;
-  // bool is_initialized = false;
 
 private:
   TrajectoryMemory()

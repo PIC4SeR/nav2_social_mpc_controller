@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/pose2_d.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "nav2_util/geometry_utils.hpp"
@@ -32,6 +34,13 @@ public:
     double regulated_linear_scaling_min_radius_{ 0.5 };
     double regulated_linear_scaling_min_speed_{ 0.1 };
     double desired_linear_velocity_{ 0.5 };
+    bool use_cost_regulated_linear_velocity_scaling{ true };
+    double cost_scaling_dist{ 0.6 };
+    double cost_scaling_gain{ 1.0 };
+    double inflation_cost_scaling_factor{ 3.0 };
+    bool use_collision_detection{ true };
+    double max_allowed_time_to_collision_up_to_carrot{ 1.0 };
+    double projection_lookahead_resolution{ 0.1 };
   };
 
   RegulatedPurePursuit() = default;
@@ -193,8 +202,17 @@ public:
   }
 
   void applyConstraints(
-    const double & curvature, const geometry_msgs::msg::Twist & /*curr_speed*/,
+    const double & curvature, const geometry_msgs::msg::Twist & curr_speed,
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & robot_pose, double & linear_vel, double & sign)
+  {
+    applyConstraints(curvature, curr_speed, -1.0, path, robot_pose, linear_vel, sign);
+  }
+
+  void applyConstraints(
+    const double & curvature, const geometry_msgs::msg::Twist & /*curr_speed*/,
+    const double & pose_cost,
+    const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & robot_pose,
+    double & linear_vel, double & sign)
   {
     double curvature_vel = linear_vel;
     double cost_vel = linear_vel;
@@ -206,19 +224,21 @@ public:
       curvature_vel *= 1.0 - (fabs(radius - min_rad) / min_rad);
     }
 
-    // // limit the linear velocity by proximity to obstacles
-    // if (params_.use_cost_regulated_linear_velocity_scaling_ &&
-    //   pose_cost != static_cast<double>(NO_INFORMATION) &&
-    //   pose_cost != static_cast<double>(FREE_SPACE))
-    // {
-    //   const double inscribed_radius = costmap_ros_->getLayeredCostmap()->getInscribedRadius();
-    //   const double min_distance_to_obstacle = (-1.0 / inflation_cost_scaling_factor_) *
-    //     std::log(pose_cost / (INSCRIBED_INFLATED_OBSTACLE - 1)) + inscribed_radius;
+    constexpr double NO_INFORMATION = 255.0;
+    constexpr double FREE_SPACE = 0.0;
+    constexpr double INSCRIBED_INFLATED_OBSTACLE = 253.0;
+    if (params_.use_cost_regulated_linear_velocity_scaling &&
+      pose_cost >= 0.0 &&
+      pose_cost != NO_INFORMATION &&
+      pose_cost != FREE_SPACE)
+    {
+      const double min_distance_to_obstacle = (-1.0 / params_.inflation_cost_scaling_factor) *
+        std::log(pose_cost / (INSCRIBED_INFLATED_OBSTACLE - 1));
 
-    //   if (min_distance_to_obstacle < cost_scaling_dist_) {
-    //     cost_vel *= cost_scaling_gain_ * min_distance_to_obstacle / cost_scaling_dist_;
-    //   }
-    // }
+      if (min_distance_to_obstacle < params_.cost_scaling_dist) {
+        cost_vel *= params_.cost_scaling_gain * min_distance_to_obstacle / params_.cost_scaling_dist;
+      }
+    }
 
     // Use the lowest of the 2 constraint heuristics, but above the minimum translational speed
     linear_vel = std::min(cost_vel, curvature_vel);
@@ -229,6 +249,59 @@ public:
     // Limit linear velocities to be valid
     linear_vel = std::clamp(fabs(linear_vel), 0.0, params_.desired_linear_velocity_);
     linear_vel = sign * linear_vel;
+  }
+
+  bool isCollisionImminent(
+    const geometry_msgs::msg::PoseStamped & robot_pose,
+    const double & linear_vel, const double & angular_vel,
+    const double & carrot_dist,
+    const std::function<bool(double, double, double)> & collision_checker) const
+  {
+    if (!params_.use_collision_detection) {
+      return false;
+    }
+
+    const double robot_yaw = tf2::getYaw(robot_pose.pose.orientation);
+    if (collision_checker(robot_pose.pose.position.x, robot_pose.pose.position.y, robot_yaw))
+    {
+      return true;
+    }
+
+    double projection_time = params_.projection_lookahead_resolution;
+    if (fabs(linear_vel) < 0.01 && fabs(angular_vel) > 0.01) {
+      projection_time = 0.1 / fabs(angular_vel);
+    } else if (fabs(linear_vel) >= 0.01) {
+      projection_time = params_.projection_lookahead_resolution / fabs(linear_vel);
+    } else {
+      return false;
+    }
+
+    geometry_msgs::msg::Pose2D curr_pose;
+    curr_pose.x = robot_pose.pose.position.x;
+    curr_pose.y = robot_pose.pose.position.y;
+    curr_pose.theta = robot_yaw;
+
+    int i = 1;
+    while (i * projection_time < params_.max_allowed_time_to_collision_up_to_carrot) {
+      i++;
+
+      curr_pose.x += projection_time * (linear_vel * cos(curr_pose.theta));
+      curr_pose.y += projection_time * (linear_vel * sin(curr_pose.theta));
+      curr_pose.theta += projection_time * angular_vel;
+
+      if (std::hypot(
+          curr_pose.x - robot_pose.pose.position.x,
+          curr_pose.y - robot_pose.pose.position.y) > carrot_dist)
+      {
+        break;
+      }
+
+      if (collision_checker(curr_pose.x, curr_pose.y, curr_pose.theta)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
 private:

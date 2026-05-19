@@ -157,8 +157,8 @@ protected:
   nav2_costmap_2d::Costmap2D* costmap_;
   rclcpp::Logger logger_{ rclcpp::get_logger("MPCEnlargedState") };
 
-  double speed_limit;
-  bool percentage;
+  double speed_limit_{0.0};
+  bool speed_limit_as_percentage_{false};
   tf2::Duration transform_tolerance_;
   double max_robot_pose_search_dist_;
   double max_linear_vel_;

@@ -25,4 +25,13 @@ VelocityFeasibilityCost::VelocityFeasibilityCost(
   current_position_ = current_position;
 }
 
+AgentVelocityFeasibilityCost::AgentVelocityFeasibilityCost(
+  double weight, unsigned int current_position, unsigned int control_horizon, unsigned int agent_count)
+: weight_(weight)
+{
+  control_horizon_ = control_horizon;
+  current_position_ = current_position;
+  agent_count_ = agent_count;
+}
+
 }  // namespace mpc_enlarged_state

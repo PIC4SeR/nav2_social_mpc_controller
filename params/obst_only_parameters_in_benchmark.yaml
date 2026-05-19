@@ -123,6 +123,10 @@ controller_server:
         debug_optimizer: false
         current_path_weight: 1.0
         current_cmds_weight: 0.5
+        agent_max_accel: 1.0
+        agent_track_timeout: 1.0
+        agent_coast_decay_time: 0.8
+        agent_association_radius: 0.75
         weights:
           distance_weight: 20.0
           social_weight: 0.0 #400.0
@@ -130,6 +134,9 @@ controller_server:
           angle_weight: 250.0
           agent_angle_weight: 0.0 #50.0
           velocity_feasibility_weight: 5.0
+          agent_velocity_reference_weight: 10.0
+          agent_sfm_dynamics_weight: 0.5
+          agent_obstacle_weight: 1.0
           goal_align_weight: 10.0
           obstacle_weight: 0.13 #0.15
           #obstacle_weight: 0.000005

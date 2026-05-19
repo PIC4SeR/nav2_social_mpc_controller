@@ -54,7 +54,11 @@ set(library_name ${PROJECT_NAME})
 
 add_library(mpc_enlarged_state_critics SHARED
   src/critics/agent_angle_cost_function.cpp
+  src/critics/agent_obstacle_cost_function.cpp
+  src/critics/agent_sfm_dynamics_cost_function.cpp
+  src/critics/agent_velocity_reference_cost_function.cpp
   src/critics/angle_cost_function.cpp
+  src/critics/crossing_cost_function.cpp
   src/critics/curvature_cost_function.cpp
   src/critics/distance_cost_function.cpp
   src/critics/goal_align_cost_function.cpp
@@ -63,7 +67,6 @@ add_library(mpc_enlarged_state_critics SHARED
   src/critics/velocity_cost_function.cpp
   src/critics/velocity_feasibility_cost_function.cpp
   src/critics/proxemics_cost_function.cpp
-  src/critics/overall_social_cost_function.cpp
 )
 
 add_library(${library_name} SHARED
@@ -116,4 +119,3 @@ ament_export_definitions("PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 pluginlib_export_plugin_description_file(nav2_core mpc_enlarged_state.xml)
 
 ament_package()
-

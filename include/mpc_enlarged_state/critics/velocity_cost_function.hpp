@@ -19,6 +19,7 @@
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 /**
  * @brief Cost function functor for velocity tracking using Ceres Solver.
  *
@@ -90,7 +91,8 @@ public:
   bool operator()(T const * const * parameters, T * residuals) const
   {
     if (current_position_ < control_horizon_) {
-      auto linear_diff = (T)desired_linear_vel_ - parameters[current_position_ / block_length_][0];
+      auto linear_diff =
+          (T)desired_linear_vel_ - parameters[current_position_ / block_length_][kRobotLinearVelocityParam];
       residuals[0] = (T)weight_ * (linear_diff) * (linear_diff);
     } else {
       residuals[0] = (T)0.0;

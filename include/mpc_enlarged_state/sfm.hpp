@@ -21,9 +21,13 @@
 #include <vector>
 
 #include "Eigen/Core"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
 namespace sfm_controller
 {
+
+using mpc_enlarged_state::kX;
+using mpc_enlarged_state::kY;
 
 struct Forces
 {
@@ -248,10 +252,10 @@ inline void SocialForceModel::computeSocialForce(unsigned index, std::vector<Age
     Eigen::Vector2d interactionVector = agent.params.lambda * velDiff + diffDirection;
     double interactionLength = interactionVector.norm();
     Eigen::Vector2d interactionDirection = interactionVector / interactionLength;
-    double a1 = std::atan2(interactionDirection[1], interactionDirection[0]);
+    double a1 = std::atan2(interactionDirection[kY], interactionDirection[kX]);
     while (a1 <= -M_PI) a1 += 2 * M_PI;
     while (a1 > M_PI) a1 -= 2 * M_PI;
-    double a2 = std::atan2(diffDirection[1], diffDirection[0]);
+    double a2 = std::atan2(diffDirection[kY], diffDirection[kX]);
     while (a2 <= -M_PI) a2 += 2 * M_PI;
     while (a2 > M_PI) a2 -= 2 * M_PI;
     // Eigen::Angle theta = interactionDirection.angleTo(diffDirection);
@@ -271,7 +275,7 @@ inline void SocialForceModel::computeSocialForce(unsigned index, std::vector<Age
     double forceAngleAmount =
       -thetaSign * std::exp(-diff.norm() / B - PW(agent.params.n * B * thetaRad));
     Eigen::Vector2d forceVelocity = forceVelocityAmount * interactionDirection;
-    Eigen::Vector2d interDir_leftNormalVector(-interactionDirection[1], interactionDirection[0]);
+    Eigen::Vector2d interDir_leftNormalVector(-interactionDirection[kY], interactionDirection[kX]);
     Eigen::Vector2d forceAngle = forceAngleAmount * interDir_leftNormalVector;
     agent.forces.socialForce += agent.params.forceFactorSocial * (forceVelocity + forceAngle);
     if (i == 0) {
@@ -294,10 +298,10 @@ inline void SocialForceModel::computeSocialForce(Agent & me, std::vector<Agent> 
     Eigen::Vector2d interactionVector = me.params.lambda * velDiff + diffDirection;
     double interactionLength = interactionVector.norm();
     Eigen::Vector2d interactionDirection = interactionVector / interactionLength;
-    double a1 = std::atan2(interactionDirection[1], interactionDirection[0]);
+    double a1 = std::atan2(interactionDirection[kY], interactionDirection[kX]);
     while (a1 <= -M_PI) a1 += 2 * M_PI;
     while (a1 > M_PI) a1 -= 2 * M_PI;
-    double a2 = std::atan2(diffDirection[1], diffDirection[0]);
+    double a2 = std::atan2(diffDirection[kY], diffDirection[kX]);
     while (a2 <= -M_PI) a2 += 2 * M_PI;
     while (a2 > M_PI) a2 -= 2 * M_PI;
     // Eigen::Angle theta = interactionDirection.angleTo(diffDirection);
@@ -316,7 +320,7 @@ inline void SocialForceModel::computeSocialForce(Agent & me, std::vector<Agent> 
     double forceAngleAmount =
       -thetaSign * std::exp(-diff.norm() / B - PW(me.params.n * B * thetaRad));
     Eigen::Vector2d forceVelocity = forceVelocityAmount * interactionDirection;
-    Eigen::Vector2d interDir_leftNormalVector(-interactionDirection[1], interactionDirection[0]);
+    Eigen::Vector2d interDir_leftNormalVector(-interactionDirection[kY], interactionDirection[kX]);
     Eigen::Vector2d forceAngle = forceAngleAmount * interDir_leftNormalVector;
     me.forces.socialForce += me.params.forceFactorSocial * (forceVelocity + forceAngle);
   }
@@ -546,7 +550,7 @@ inline std::vector<Agent> & SocialForceModel::updatePosition(
       agents[i].velocity *= agents[i].desiredVelocity;
     }
     double initYaw = agents[i].yaw;
-    double yaw = std::atan2(agents[i].velocity[1], agents[i].velocity[0]);
+    double yaw = std::atan2(agents[i].velocity[kY], agents[i].velocity[kX]);
     while (yaw <= -M_PI) yaw += 2 * M_PI;
     while (yaw > M_PI) yaw -= 2 * M_PI;
     agents[i].yaw = yaw;
@@ -582,7 +586,7 @@ inline void SocialForceModel::updatePosition(Agent & agent, double dt) const
     agent.velocity.normalize();
     agent.velocity *= agent.desiredVelocity;
   }
-  double yaw = std::atan2(agent.velocity[1], agent.velocity[0]);
+  double yaw = std::atan2(agent.velocity[kY], agent.velocity[kX]);
   while (yaw <= -M_PI) yaw += 2 * M_PI;
   while (yaw > M_PI) yaw -= 2 * M_PI;
   agent.yaw = yaw;

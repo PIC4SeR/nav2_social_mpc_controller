@@ -19,6 +19,7 @@
 #include "ceres/ceres.h"
 #include "geometry_msgs/msg/pose.hpp"
 #include "glog/logging.h"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 /**
  * @file velocity_feasibility_cost_function.hpp
  * @brief Declaration of the VelocityFeasibilityCost class for computing velocity feasibility cost.
@@ -78,7 +79,8 @@ public:
    * If the current position is equal to or exceeds the control horizon, the residual is set to zero.
    *
    * @tparam T The arithmetic type (e.g., double) used for automatic differentiation.
-   * @param state1 Pointer to the first state vector; state1[0] represents linear velocity and state1[1] angular velocity.
+   * @param state1 Pointer to the first state vector; state1[kRobotLinearVelocityParam] represents linear velocity
+   * and state1[kRobotAngularVelocityParam] angular velocity.
    * @param state2 Pointer to the second state vector with the same structure as state1.
    * @param residual Pointer to the residual value where the computed cost is stored.
    * @return true Always returns true indicating the computation was successful.
@@ -87,8 +89,8 @@ public:
   bool operator()(const T * const state1, const T * const state2, T * residual) const
   {
     if (current_position_ < control_horizon_) {
-      auto lin_vel_diff = state1[0] - state2[0];
-      auto ang_vel_diff = state1[1] - state2[1];
+      auto lin_vel_diff = state1[kRobotLinearVelocityParam] - state2[kRobotLinearVelocityParam];
+      auto ang_vel_diff = state1[kRobotAngularVelocityParam] - state2[kRobotAngularVelocityParam];
       residual[0] =
         (T)weight_ * (lin_vel_diff) * (lin_vel_diff) + (T)weight_ * (ang_vel_diff) * (ang_vel_diff);
     } else {
@@ -132,13 +134,13 @@ public:
       return true;
     }
 
-    const T* const current_block = agent_blocks[0];
-    const T* const previous_block = agent_blocks[1];
+    const T* const current_block = agent_blocks[kCurrentVelocityBlock];
+    const T* const previous_block = agent_blocks[kPreviousVelocityBlock];
     for (unsigned int agent_idx = 0; agent_idx < agent_count_; ++agent_idx)
     {
-      const unsigned int idx = 2 * agent_idx;
-      const T x_vel_diff = current_block[idx] - previous_block[idx];
-      const T y_vel_diff = current_block[idx + 1] - previous_block[idx + 1];
+      const unsigned int idx = kAgentVelocityParamStride * agent_idx;
+      const T x_vel_diff = current_block[idx + kAgentVxParam] - previous_block[idx + kAgentVxParam];
+      const T y_vel_diff = current_block[idx + kAgentVyParam] - previous_block[idx + kAgentVyParam];
       residual[agent_idx] = T(weight_) * x_vel_diff * x_vel_diff + T(weight_) * y_vel_diff * y_vel_diff;
     }
     return true;

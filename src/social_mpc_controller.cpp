@@ -136,7 +136,7 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
   visualization_msgs::msg::MarkerArray ma;
   for (size_t idx = 0; idx < npeople; idx++)
   {
-    if (people[0][idx][3] != -1.0)
+    if (people[0][idx][kStateTime] != -1.0)
     {
       visualization_msgs::msg::Marker m;
       m.header = header;
@@ -158,7 +158,7 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
     int mi = 0;
     for (size_t idx = 0; idx < npeople; idx++)
     {
-      if (people[0][idx][3] != -1.0)
+      if (people[0][idx][kStateTime] != -1.0)
       {
         agent_to_marker[idx] = mi++;
       }
@@ -178,11 +178,11 @@ void MPCEnlargedState::publish_people_traj(const AgentsTrajectories& people, con
       {
         continue;
       }
-      if (people[stepi][personi][3] != -1.0)
+      if (people[stepi][personi][kStateTime] != -1.0)
       {
         geometry_msgs::msg::Point point;
-        point.x = people[stepi][personi][0];
-        point.y = people[stepi][personi][1];
+        point.x = people[stepi][personi][kStateX];
+        point.y = people[stepi][personi][kStateY];
         point.z = 0.1;
         ma.markers[mi].points.push_back(point);
       }

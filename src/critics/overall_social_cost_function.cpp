@@ -48,7 +48,7 @@ SocialOverallCost::SocialOverallCost(double work_weight,double angle_weight, dou
   , use_path_follow_cost_(use_path_follow_cost)
   , use_path_align_cost_(use_path_align_cost)  // Default value, can be set later if needed
 {
-  original_agents_.resize(6, agents_init.size());
+  original_agents_.resize(kStateSize, agents_init.size());
   for (size_t j = 0; j < agents_init.size(); j++)
   {
     original_agents_.col(j) = agents_init[j];

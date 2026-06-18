@@ -37,7 +37,7 @@ AgentSfmDynamicsCost::AgentSfmDynamicsCost(double weight, double max_accel, cons
   , parameter_block_count_(parameter_block_count)
   , has_agent_parameters_(has_agent_parameters)
   , agent_count_(agent_count)
-  , reference_velocities_(2 * agent_count, 0.0)
+  , reference_velocities_(kAgentVelocityParamStride * agent_count, 0.0)
   , active_agents_(agent_count, false)
   , sfm_lambda_(2.0)
   , sfm_gamma_(0.35)
@@ -51,14 +51,16 @@ AgentSfmDynamicsCost::AgentSfmDynamicsCost(double weight, double max_accel, cons
   for (unsigned int agent_idx = 0; agent_idx < tracked_agents; ++agent_idx)
   {
     const auto& agent = agents_init_[agent_idx];
-    if (agent[3] == -1.0)
+    if (agent[kStateTime] == -1.0)
     {
       continue;
     }
 
-    const unsigned int idx = 2 * agent_idx;
-    reference_velocities_[idx] = agent[4] * std::cos(agent[2]);
-    reference_velocities_[idx + 1] = agent[4] * std::sin(agent[2]);
+    const unsigned int idx = kAgentVelocityParamStride * agent_idx;
+    reference_velocities_[idx + kAgentVxParam] =
+        agent[kStateLinearVelocity] * std::cos(agent[kStateYaw]);
+    reference_velocities_[idx + kAgentVyParam] =
+        agent[kStateLinearVelocity] * std::sin(agent[kStateYaw]);
     active_agents_[agent_idx] = true;
   }
 }

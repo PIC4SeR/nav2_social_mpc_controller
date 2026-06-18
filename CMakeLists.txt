@@ -56,6 +56,7 @@ add_library(mpc_enlarged_state_critics SHARED
   src/critics/agent_angle_cost_function.cpp
   src/critics/agent_obstacle_cost_function.cpp
   src/critics/agent_sfm_dynamics_cost_function.cpp
+  src/critics/agent_orca_dynamics_cost_function.cpp
   src/critics/agent_velocity_reference_cost_function.cpp
   src/critics/angle_cost_function.cpp
   src/critics/crossing_cost_function.cpp

@@ -18,6 +18,7 @@
 #include "Eigen/Core"
 #include "ceres/ceres.h"
 #include "glog/logging.h"
+#include "mpc_enlarged_state/tools/type_definitions.hpp"
 
 namespace mpc_enlarged_state
 {
@@ -65,12 +66,12 @@ public:
   template <typename T>
   bool operator()(const T* const state1, const T* const state2, const T* const state3, T* residual) const
   {
-    T vector1[2] = { state2[0] - state1[0], state2[1] - state1[1] };
-    T vector2[2] = { state2[0] - state3[0], state2[1] - state3[1] };
+    T vector1[kPositionParameterBlockSize] = { state2[kX] - state1[kX], state2[kY] - state1[kY] };
+    T vector2[kPositionParameterBlockSize] = { state2[kX] - state3[kX], state2[kY] - state3[kY] };
 
-    T dot_product = (vector2[0] * vector1[0]) + (vector2[1] * vector1[1]);
-    T norm_vector1 = sqrt((vector1[0] * vector1[0]) + (vector1[1] * vector1[1]));
-    T norm_vector2 = sqrt((vector2[0] * vector2[0]) + (vector2[1] * vector2[1]));
+    T dot_product = (vector2[kX] * vector1[kX]) + (vector2[kY] * vector1[kY]);
+    T norm_vector1 = sqrt((vector1[kX] * vector1[kX]) + (vector1[kY] * vector1[kY]));
+    T norm_vector2 = sqrt((vector2[kX] * vector2[kX]) + (vector2[kY] * vector2[kY]));
 
     T angle = acos(dot_product / (norm_vector1 * norm_vector2));
 

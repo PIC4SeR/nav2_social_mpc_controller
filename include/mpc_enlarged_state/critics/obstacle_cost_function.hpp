@@ -158,7 +158,7 @@ public:
     Eigen::Matrix<T, 2, 1> interp_front =
       (front - costmap_origin_.template cast<T>()) / (T)costmap_resolution_;
 
-    costmap_interpolator_->Evaluate(interp_front[1], interp_front[0], &value_front);
+    costmap_interpolator_->Evaluate(interp_front[kY], interp_front[kX], &value_front);
 
     // the residual is the sum of the two costs, multiplied by the weight
     residuals[0] = (T)weight_ * value_front;  //+ (T)weight_ *value;

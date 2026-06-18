@@ -15,7 +15,7 @@ void add_robot_parameter_blocks(ceres::DynamicCostFunction* cost_function, const
 {
   for (unsigned int j = 0; j < active_blocks; ++j)
   {
-    cost_function->AddParameterBlock(2);
+    cost_function->AddParameterBlock(kRobotParameterBlockSize);
   }
 }
 
@@ -25,7 +25,7 @@ void add_enlarged_parameter_blocks(ceres::DynamicCostFunction* cost_function, co
   add_robot_parameter_blocks(cost_function, active_blocks);
   if (has_agent_parameters)
   {
-    const unsigned int agent_block_dim = static_cast<unsigned int>(2 * num_agents);
+    const unsigned int agent_block_dim = static_cast<unsigned int>(kAgentVelocityParamStride * num_agents);
     for (unsigned int j = 0; j < active_blocks; ++j)
     {
       cost_function->AddParameterBlock(agent_block_dim);
@@ -332,7 +332,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     for (size_t k = 0; k < num_agents_size; ++k)
     {
       fallback_agents[k] = AgentStatus::Zero();
-      fallback_agents[k][3] = -1.0;  // mark as invalid by default
+      fallback_agents[k][kStateTime] = -1.0;  // mark as invalid by default
     }
   }
 
@@ -344,8 +344,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   AgentsStates social_people_states = people_states_for_cost;
   for (auto& agent : social_people_states)
   {
-    if (agent[3] != -1.0 && agent[4] < stationary_agent_speed_threshold_)
-      agent[3] = -1.0;
+    if (agent[kStateTime] != -1.0 && agent[kStateLinearVelocity] < stationary_agent_speed_threshold_)
+      agent[kStateTime] = -1.0;
   }
 
   std::vector<dynamic_optimizing_velocities> variables_to_optimize;
@@ -354,15 +354,18 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   {
     dynamic_optimizing_velocities doa;
     doa.set_num_agents(num_agents);
-    doa.robot.params[0] = optim_status[j][4];
-    doa.robot.params[1] = optim_status[j][5];
+    doa.robot.params[kRobotLinearVelocityParam] = optim_status[j][kStateLinearVelocity];
+    doa.robot.params[kRobotAngularVelocityParam] = optim_status[j][kStateAngularVelocity];
     for (unsigned int k = 0; k < num_agents; ++k)
     {
       const auto& agent_state = (people_proj.empty() || people_proj[0].size() <= k)
                                     ? fallback_agents[k]
                                     : people_proj[0][k];
-      doa.agents[2 * k] = agent_state[4] * ceres::cos(agent_state[2]);      // velocity x of agent k
-      doa.agents[2 * k + 1] = agent_state[4] * ceres::sin(agent_state[2]);  // velocity y of agent k
+      const unsigned int agent_param_idx = kAgentVelocityParamStride * k;
+      doa.agents[agent_param_idx + kAgentVxParam] =
+          agent_state[kStateLinearVelocity] * ceres::cos(agent_state[kStateYaw]);
+      doa.agents[agent_param_idx + kAgentVyParam] =
+          agent_state[kStateLinearVelocity] * ceres::sin(agent_state[kStateYaw]);
     }
     variables_to_optimize.push_back(doa);
   }
@@ -379,25 +382,25 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   for (auto a : optim_status)
   {
     position p;
-    p.params[0] = a[0];  // x
-    p.params[1] = a[1];  // y
+    p.params[kX] = a[kStateX];  // x
+    p.params[kY] = a[kStateY];  // y
     vel v;
-    v.params[0] = a[4];  // lv
-    v.params[1] = a[5];  // av
+    v.params[kRobotLinearVelocityParam] = a[kStateLinearVelocity];    // lv
+    v.params[kRobotAngularVelocityParam] = a[kStateAngularVelocity];  // av
     linear_velocity lv;
-    lv.params[0] = a[4];  // lv
+    lv.params[kScalarParam] = a[kStateLinearVelocity];  // lv
     angular_velocity av;
-    av.params[0] = a[5];  // av
+    av.params[kScalarParam] = a[kStateAngularVelocity];  // av
     heading h;
-    h.params[0] = a[3];  // t
-    h.params[1] = a[2];  // yaw
+    h.params[kHeadingTimeParam] = a[kStateTime];  // t
+    h.params[kHeadingYawParam] = a[kStateYaw];    // yaw
     geometry_msgs::msg::PoseStamped pose;
     pose.header = path.header;
-    pose.pose.position.x = a[0];
-    pose.pose.position.y = a[1];
+    pose.pose.position.x = a[kStateX];
+    pose.pose.position.y = a[kStateY];
     pose.pose.position.z = 0.0;
     tf2::Quaternion quaternion;
-    quaternion.setRPY(0, 0, a[2]);  // yaw
+    quaternion.setRPY(0, 0, a[kStateYaw]);  // yaw
     pose.pose.orientation = tf2::toMsg(quaternion);
     optim_positions.push_back(p);
     optim_velocities.push_back(v);
@@ -406,8 +409,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     optim_angular_velocities.push_back(av);
     evolving_poses.push_back(pose);
   }
-  Eigen::Matrix<double, 2, 1> final_trajectorized_point(optim_positions[optim_status.size() - 1].params[0],
-                                                        optim_positions[optim_status.size() - 1].params[1]);
+  Eigen::Matrix<double, 2, 1> final_trajectorized_point(
+      optim_positions[optim_status.size() - 1].params[kX], optim_positions[optim_status.size() - 1].params[kY]);
 
   optim_velocities.pop_back();
 
@@ -447,7 +450,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       social_parameter_blocks.insert(social_parameter_blocks.end(), agent_parameter_blocks.begin(),
                                      agent_parameter_blocks.begin() + active_blocks);
     }
-    Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[0], optim_positions[i + 1].params[1]);
+    Eigen::Matrix<double, 2, 1> point(optim_positions[i + 1].params[kX], optim_positions[i + 1].params[kY]);
     const double counter_step = static_cast<double>(i) * time_step;
     if (found_people)
     {
@@ -508,7 +511,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
                                          evolving_poses[0].pose, i, time_step, control_horizon, block_length,
                                          active_blocks, has_agent_parameters, num_agents);
         add_enlarged_parameter_blocks(agent_sfm_dynamics_function_f, active_blocks, has_agent_parameters, num_agents);
-        agent_sfm_dynamics_function_f->SetNumResiduals(2 * num_agents);
+        agent_sfm_dynamics_function_f->SetNumResiduals(kAgentVelocityParamStride * num_agents);
         problem.AddResidualBlock(agent_sfm_dynamics_function_f, NULL, social_parameter_blocks);
       }
     }
@@ -534,7 +537,8 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     auto* velocity_function_f =
         VelocityCost::Create(velocity_weight, desired_linear_vel_, i, control_horizon, block_length);
         
-    Eigen::Matrix<double, 2, 1> final_heading(optim_headings.back().params[0], optim_headings.back().params[1]);
+    Eigen::Matrix<double, 2, 1> final_heading(optim_headings.back().params[kHeadingTimeParam],
+                                              optim_headings.back().params[kHeadingYawParam]);
     auto* goal_align_cost_function_f = GoalAlignCost::Create(goal_align_w_, final_heading, evolving_poses[0].pose, i,
                                                              time_step, control_horizon, block_length);
     add_robot_parameter_blocks(velocity_function_f, active_blocks);
@@ -569,7 +573,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       block_length > 0 ? static_cast<unsigned int>(robot_parameter_blocks.size()) : 0;
   if (has_agent_parameters && agent_velocity_reference_w_ > 0.0)
   {
-    const unsigned int agent_block_dim = static_cast<unsigned int>(2 * num_agents);
+    const unsigned int agent_block_dim = static_cast<unsigned int>(kAgentVelocityParamStride * num_agents);
     for (unsigned int i = 0; i < block_count; ++i)
     {
       auto* agent_velocity_reference_cost_function_f =
@@ -589,7 +593,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
     {
       auto* agent_velocity_feasibility_cost_function_f =
           AgentVelocityFeasibilityCost::Create(velocity_feasibility_w_, i, block_count, num_agents);
-      const unsigned int agent_block_dim = static_cast<unsigned int>(2 * num_agents);
+      const unsigned int agent_block_dim = static_cast<unsigned int>(kAgentVelocityParamStride * num_agents);
       agent_velocity_feasibility_cost_function_f->AddParameterBlock(agent_block_dim);
       agent_velocity_feasibility_cost_function_f->AddParameterBlock(agent_block_dim);
       agent_velocity_feasibility_cost_function_f->SetNumResiduals(num_agents);
@@ -600,10 +604,10 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   for (unsigned int i = 0; i < block_count; i++)
   {
     auto* robot_block = robot_parameter_blocks[i];
-    problem.SetParameterLowerBound(robot_block, 0, min_linear_vel_);    // lower bound for linear velocity
-    problem.SetParameterUpperBound(robot_block, 0, max_linear_vel_);    // upper bound for linear velocity
-    problem.SetParameterLowerBound(robot_block, 1, -max_angular_vel_);  // lower bound for angular velocity
-    problem.SetParameterUpperBound(robot_block, 1, max_angular_vel_);   // upper bound for angular velocity
+    problem.SetParameterLowerBound(robot_block, kRobotLinearVelocityParam, min_linear_vel_);
+    problem.SetParameterUpperBound(robot_block, kRobotLinearVelocityParam, max_linear_vel_);
+    problem.SetParameterLowerBound(robot_block, kRobotAngularVelocityParam, -max_angular_vel_);
+    problem.SetParameterUpperBound(robot_block, kRobotAngularVelocityParam, max_angular_vel_);
 
     if (has_agent_parameters)
     {
@@ -613,20 +617,20 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
         const auto& agent_state = (people_proj.empty() || people_proj[0].size() <= j)
                                       ? fallback_agents[j]
                                       : people_proj[0][j];
-        const bool agent_is_stationary = agent_state[4] < stationary_agent_speed_threshold_;
+        const bool agent_is_stationary = agent_state[kStateLinearVelocity] < stationary_agent_speed_threshold_;
         const double bound = agent_is_stationary ? stationary_agent_velocity_bound_ : agent_velocity_bound_;
         if (agent_is_stationary)
         {
           RCLCPP_WARN_STREAM(rclcpp::get_logger("optimizer"),
                              "Agent " << j << " detected as stationary ("
-                                      << agent_state[4] << " m/s), constraining velocity params to +-"
+                                      << agent_state[kStateLinearVelocity] << " m/s), constraining velocity params to +-"
                                       << stationary_agent_velocity_bound_);
         }
-        const unsigned int idx = 2 * j;
-        problem.SetParameterLowerBound(agent_block, idx, -bound);
-        problem.SetParameterUpperBound(agent_block, idx, bound);
-        problem.SetParameterLowerBound(agent_block, idx + 1, -bound);
-        problem.SetParameterUpperBound(agent_block, idx + 1, bound);
+        const unsigned int idx = kAgentVelocityParamStride * j;
+        problem.SetParameterLowerBound(agent_block, idx + kAgentVxParam, -bound);
+        problem.SetParameterUpperBound(agent_block, idx + kAgentVxParam, bound);
+        problem.SetParameterLowerBound(agent_block, idx + kAgentVyParam, -bound);
+        problem.SetParameterUpperBound(agent_block, idx + kAgentVyParam, bound);
       }
     }
   }
@@ -641,35 +645,39 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
   for (unsigned int i = control_horizon / block_length; i < variables_to_optimize.size(); i++)
   {
-    variables_to_optimize[i].robot.params[0] =
-        variables_to_optimize[(control_horizon - 1) / block_length].robot.params[0];
-    variables_to_optimize[i].robot.params[1] =
-        variables_to_optimize[(control_horizon - 1) / block_length].robot.params[1];
+    variables_to_optimize[i].robot.params[kRobotLinearVelocityParam] =
+        variables_to_optimize[(control_horizon - 1) / block_length].robot.params[kRobotLinearVelocityParam];
+    variables_to_optimize[i].robot.params[kRobotAngularVelocityParam] =
+        variables_to_optimize[(control_horizon - 1) / block_length].robot.params[kRobotAngularVelocityParam];
   }
   std::vector<vel> saving_velocities;
   for (unsigned int i = 0; i < control_horizon; i++)
   {
     vel v;
     unsigned int block_idx = i / (block_length);
-    v.params[0] = variables_to_optimize[block_idx].robot.params[0];
-    v.params[1] = variables_to_optimize[block_idx].robot.params[1];
+    v.params[kRobotLinearVelocityParam] =
+        variables_to_optimize[block_idx].robot.params[kRobotLinearVelocityParam];
+    v.params[kRobotAngularVelocityParam] =
+        variables_to_optimize[block_idx].robot.params[kRobotAngularVelocityParam];
     saving_velocities.push_back(v);
   }
   for (unsigned int i = control_horizon; i < (variables_to_optimize.size() + 1); i++)
   {
     vel v;
     unsigned int block_idx = (i - 1);
-    v.params[0] = variables_to_optimize[block_idx].robot.params[0];
-    v.params[1] = variables_to_optimize[block_idx].robot.params[1];
+    v.params[kRobotLinearVelocityParam] =
+        variables_to_optimize[block_idx].robot.params[kRobotLinearVelocityParam];
+    v.params[kRobotAngularVelocityParam] =
+        variables_to_optimize[block_idx].robot.params[kRobotAngularVelocityParam];
     saving_velocities.push_back(v);
   }
   cmds.resize(saving_velocities.size());
   for (unsigned int i = 0; i < saving_velocities.size(); i++)
   {
     cmds[i].header = path.header;
-    cmds[i].twist.linear.x = saving_velocities[i].params[0];
+    cmds[i].twist.linear.x = saving_velocities[i].params[kRobotLinearVelocityParam];
     cmds[i].twist.linear.y = 0.0;
-    cmds[i].twist.angular.z = saving_velocities[i].params[1];
+    cmds[i].twist.angular.z = saving_velocities[i].params[kRobotAngularVelocityParam];
   }
   people_proj.clear();
   if (has_agent_parameters && block_count > 0)
@@ -686,22 +694,22 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
       for (unsigned int agent_idx = 0; agent_idx < num_agents; ++agent_idx)
       {
         auto& agent_state = projected_agents[agent_idx];
-        if (agent_state[3] == -1.0)
+        if (agent_state[kStateTime] == -1.0)
         {
           continue;
         }
-        const unsigned int param_idx = 2 * agent_idx;
-        const double vx = agent_block[param_idx];
-        const double vy = agent_block[param_idx + 1];
-        const double previous_yaw = agent_state[2];
+        const unsigned int param_idx = kAgentVelocityParamStride * agent_idx;
+        const double vx = agent_block[param_idx + kAgentVxParam];
+        const double vy = agent_block[param_idx + kAgentVyParam];
+        const double previous_yaw = agent_state[kStateYaw];
         const double new_yaw = std::hypot(vx, vy) > 1e-6 ? std::atan2(vy, vx) : previous_yaw;
         const double yaw_delta = std::atan2(std::sin(new_yaw - previous_yaw), std::cos(new_yaw - previous_yaw));
-        agent_state[0] += vx * time_step;
-        agent_state[1] += vy * time_step;
-        agent_state[2] = new_yaw;
-        agent_state[3] = static_cast<double>(step + 1) * time_step;
-        agent_state[4] = std::hypot(vx, vy);
-        agent_state[5] = yaw_delta / time_step;
+        agent_state[kStateX] += vx * time_step;
+        agent_state[kStateY] += vy * time_step;
+        agent_state[kStateYaw] = new_yaw;
+        agent_state[kStateTime] = static_cast<double>(step + 1) * time_step;
+        agent_state[kStateLinearVelocity] = std::hypot(vx, vy);
+        agent_state[kStateAngularVelocity] = yaw_delta / time_step;
       }
       people_proj.push_back(projected_agents);
     }
@@ -721,11 +729,14 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   for (auto vel : saving_velocities)
   {
     pose_old.pose.position.x = previous_pose_old.pose.position.x +
-                               vel.params[0] * cos(tf2::getYaw(previous_pose_old.pose.orientation)) * time_step;
+                               vel.params[kRobotLinearVelocityParam] *
+                                   cos(tf2::getYaw(previous_pose_old.pose.orientation)) * time_step;
     pose_old.pose.position.y = previous_pose_old.pose.position.y +
-                               vel.params[0] * sin(tf2::getYaw(previous_pose_old.pose.orientation)) * time_step;
+                               vel.params[kRobotLinearVelocityParam] *
+                                   sin(tf2::getYaw(previous_pose_old.pose.orientation)) * time_step;
     tf2::Quaternion uao;
-    uao.setRPY(0, 0, tf2::getYaw(previous_pose_old.pose.orientation) + vel.params[1] * time_step);
+    uao.setRPY(0, 0, tf2::getYaw(previous_pose_old.pose.orientation) +
+                         vel.params[kRobotAngularVelocityParam] * time_step);
     pose_old.pose.orientation = tf2::toMsg(uao);
 
     previous_pose_old.pose.position.x = pose_old.pose.position.x;
@@ -761,18 +772,18 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
       continue;
     }
 
-    const double vx = track.state[4] * std::cos(track.state[2]);
-    const double vy = track.state[4] * std::sin(track.state[2]);
-    track.state[0] += vx * dt;
-    track.state[1] += vy * dt;
+    const double vx = track.state[kStateLinearVelocity] * std::cos(track.state[kStateYaw]);
+    const double vy = track.state[kStateLinearVelocity] * std::sin(track.state[kStateYaw]);
+    track.state[kStateX] += vx * dt;
+    track.state[kStateY] += vy * dt;
 
     const double age = std::max(0.0, current_time - track.last_seen_time);
     if (age > 0.0 && agent_coast_decay_time_ > 1e-6)
     {
-      track.state[4] *= std::exp(-dt / agent_coast_decay_time_);
+      track.state[kStateLinearVelocity] *= std::exp(-dt / agent_coast_decay_time_);
     }
 
-    track.state[3] = age;
+    track.state[kStateTime] = age;
     track.last_update_time = current_time;
   }
 
@@ -809,8 +820,8 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
         continue;
       }
 
-      const double dx = tracked_agents_[track_idx].state[0] - detection[0];
-      const double dy = tracked_agents_[track_idx].state[1] - detection[1];
+      const double dx = tracked_agents_[track_idx].state[kStateX] - detection[kStateX];
+      const double dy = tracked_agents_[track_idx].state[kStateY] - detection[kStateY];
       const double distance_sq = dx * dx + dy * dy;
       if (distance_sq <= best_distance_sq)
       {
@@ -852,7 +863,7 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
     {
       break;
     }
-    track.state[3] = std::max(0.0, current_time - track.last_seen_time);
+    track.state[kStateTime] = std::max(0.0, current_time - track.last_seen_time);
     people_status.push_back(track.state);
   }
 
@@ -901,16 +912,16 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
       // update the current pose with the smoothed pose
       path.poses[i].pose = smoothed;
     }
-    r(0, 0) = path.poses[i].pose.position.x;
-    r(1, 0) = path.poses[i].pose.position.y;
-    r(2, 0) = tf2::getYaw(path.poses[i].pose.orientation);
-    r(3, 0) = i * timestep;
+    r(kStateX, 0) = path.poses[i].pose.position.x;
+    r(kStateY, 0) = path.poses[i].pose.position.y;
+    r(kStateYaw, 0) = tf2::getYaw(path.poses[i].pose.orientation);
+    r(kStateTime, 0) = i * timestep;
 
     if (i == 0)
     {
       // Robot vel
-      r(4, 0) = speed.linear.x;
-      r(5, 0) = speed.angular.z;
+      r(kStateLinearVelocity, 0) = speed.linear.x;
+      r(kStateAngularVelocity, 0) = speed.angular.z;
     }
     else if (i - 1 < cmds.size())
     {
@@ -918,14 +929,14 @@ AgentTrajectory Optimizer::format_to_optimize(nav_msgs::msg::Path& path, const n
       const double av_curr = cmds[i - 1].twist.angular.z;
       const double lv_prev = (i - 1 < previous_cmds.size()) ? previous_cmds[i - 1].twist.linear.x : lv_curr;
       const double av_prev = (i - 1 < previous_cmds.size()) ? previous_cmds[i - 1].twist.angular.z : av_curr;
-      r(4, 0) = current_cmds_w * lv_curr + (1.0 - current_cmds_w) * lv_prev;
-      r(5, 0) = current_cmds_w * av_curr + (1.0 - current_cmds_w) * av_prev;
+      r(kStateLinearVelocity, 0) = current_cmds_w * lv_curr + (1.0 - current_cmds_w) * lv_prev;
+      r(kStateAngularVelocity, 0) = current_cmds_w * av_curr + (1.0 - current_cmds_w) * av_prev;
     }
     else
     {
       // Beyond available commands: hold last known velocity
-      r(4, 0) = robot_status.empty() ? 0.0 : robot_status.back()(4, 0);
-      r(5, 0) = robot_status.empty() ? 0.0 : robot_status.back()(5, 0);
+      r(kStateLinearVelocity, 0) = robot_status.empty() ? 0.0 : robot_status.back()(kStateLinearVelocity, 0);
+      r(kStateAngularVelocity, 0) = robot_status.empty() ? 0.0 : robot_status.back()(kStateAngularVelocity, 0);
     }
     robot_status.push_back(r);
   }

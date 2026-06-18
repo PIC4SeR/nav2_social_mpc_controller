@@ -40,22 +40,26 @@ public:
   template <typename T>
   bool operator()(T const* const* parameters, T* residuals) const
   {
-    const unsigned int residual_count = 2 * agent_count_;
+    const unsigned int residual_count = kAgentVelocityParamStride * agent_count_;
     for (unsigned int idx = 0; idx < residual_count; ++idx)
     {
       residuals[idx] = T(0.0);
     }
 
-    const T* const agent_block = parameters[0];
+    const T* const agent_block = parameters[kCurrentVelocityBlock];
     for (unsigned int agent_idx = 0; agent_idx < agent_count_; ++agent_idx)
     {
       if (!active_agents_[agent_idx])
       {
         continue;
       }
-      const unsigned int idx = 2 * agent_idx;
-      residuals[idx] = T(sqrt_weight_) * (agent_block[idx] - T(reference_velocities_[idx]));
-      residuals[idx + 1] = T(sqrt_weight_) * (agent_block[idx + 1] - T(reference_velocities_[idx + 1]));
+      const unsigned int idx = kAgentVelocityParamStride * agent_idx;
+      residuals[idx + kAgentVxParam] =
+          T(sqrt_weight_) *
+          (agent_block[idx + kAgentVxParam] - T(reference_velocities_[idx + kAgentVxParam]));
+      residuals[idx + kAgentVyParam] =
+          T(sqrt_weight_) *
+          (agent_block[idx + kAgentVyParam] - T(reference_velocities_[idx + kAgentVyParam]));
     }
 
     return true;

@@ -96,8 +96,8 @@ public:
   {
     auto [new_position_x, new_position_y, new_position_orientation] = computeUpdatedStateRedux(
       robot_init_, parameters, time_step_, current_position_, control_horizon_, block_length_);
-    auto dx = point_[0] - new_position_x;
-    auto dy = point_[1] - new_position_y;
+    auto dx = point_[kX] - new_position_x;
+    auto dy = point_[kY] - new_position_y;
     auto point_heading = atan2(dy, dx);
     auto new_yaw = new_position_orientation;
     new_yaw = atan2(sin(new_yaw), cos(new_yaw));

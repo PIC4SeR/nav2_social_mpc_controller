@@ -153,14 +153,14 @@ public:
     T closest_distance_squared = T(9999.0);
     for (Eigen::Index i = 0; i < agents.cols(); ++i)
     {
-      if (agents(3, i) == T(-1.0))
+      if (agents(kStateTime, i) == T(-1.0))
       {
         continue;
       }
-      T dx = agents(0, i) - new_position_x;
-      T dy = agents(1, i) - new_position_y;
+      T dx = agents(kStateX, i) - new_position_x;
+      T dy = agents(kStateY, i) - new_position_y;
       T distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents(4, i) > T(0.05))
+      if (distance_squared < closest_distance_squared && agents(kStateLinearVelocity, i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = static_cast<int>(i);
@@ -171,15 +171,15 @@ public:
       residuals[0] = T(0.0);
       return true;
     }
-    T angle_to_agent = ceres::atan2(agents(1, closest_index) - new_position_y,
-                                    agents(0, closest_index) - new_position_x);
+    T angle_to_agent = ceres::atan2(agents(kStateY, closest_index) - new_position_y,
+                                    agents(kStateX, closest_index) - new_position_x);
     T rel_angle = ceres::atan2(ceres::sin(angle_to_agent - new_position_orientation),
                                ceres::cos(angle_to_agent - new_position_orientation));
     T alignment = ceres::cos(rel_angle);
     T k = T(5.0);
     T active = ceres::log(T(1.0) + ceres::exp(k * alignment)) / k;
     T dist_decay = ceres::exp(-closest_distance_squared / T(safe_distance_squared_));
-    T agent_heading = agents(2, closest_index);
+    T agent_heading = agents(kStateYaw, closest_index);
     T velocity_alignment = ceres::cos(new_position_orientation - agent_heading);
     T velocity_active = ceres::log(T(1.0) + ceres::exp(k * velocity_alignment)) / k;
     residuals[0] = T(weight_) * dist_decay * (active + T(velocity_alignment_weight_) * velocity_active);

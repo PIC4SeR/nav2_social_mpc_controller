@@ -58,21 +58,21 @@ public:
     unsigned int block_idx = current_position_ < control_horizon_ ? current_position_ / block_length_ :
                                                                  (control_horizon_ - 1) / block_length_;
     block_idx = std::min(block_idx, parameter_block_count_ - 1);
-    T robot_v = parameters[block_idx][0];
-    T robot_omega = parameters[block_idx][1];
+    T robot_v = parameters[block_idx][kRobotLinearVelocityParam];
+    T robot_omega = parameters[block_idx][kRobotAngularVelocityParam];
 
     int closest_index = -1;
     T closest_distance_squared = T(9999.0);
     for (Eigen::Index i = 0; i < agents.cols(); i++)
     {
-      if (agents(3, i) == T(-1.0))
+      if (agents(kStateTime, i) == T(-1.0))
       {
         continue;
       }
-      T dx = agents(0, i) - new_position_x;
-      T dy = agents(1, i) - new_position_y;
+      T dx = agents(kStateX, i) - new_position_x;
+      T dy = agents(kStateY, i) - new_position_y;
       T distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents(4, i) > T(0.05))
+      if (distance_squared < closest_distance_squared && agents(kStateLinearVelocity, i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = static_cast<int>(i);
@@ -85,7 +85,7 @@ public:
       return true;
     }
 
-    T agent_heading = agents(2, closest_index);
+    T agent_heading = agents(kStateYaw, closest_index);
     T heading_diff = new_position_orientation - agent_heading;
     T sin_diff = ceres::sin(heading_diff);
     T crossing_intensity = sin_diff * sin_diff;
@@ -93,8 +93,8 @@ public:
 
     T agent_heading_dx = ceres::cos(agent_heading);
     T agent_heading_dy = ceres::sin(agent_heading);
-    T to_agent_x = agents(0, closest_index) - new_position_x;
-    T to_agent_y = agents(1, closest_index) - new_position_y;
+    T to_agent_x = agents(kStateX, closest_index) - new_position_x;
+    T to_agent_y = agents(kStateY, closest_index) - new_position_y;
     T cross = to_agent_x * agent_heading_dy - to_agent_y * agent_heading_dx;
 
     T steer_scale = T(3.0);

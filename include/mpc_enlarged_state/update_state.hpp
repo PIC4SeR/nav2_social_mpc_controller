@@ -50,15 +50,15 @@ std::tuple<T, T, T> computeUpdatedStateRedux(const geometry_msgs::msg::Pose& pos
     if (j < control_horizon)
     {
       unsigned int block_index = j / block_size;
-      x += parameters[block_index][0] * ceres::cos(theta) * dt;
-      y += parameters[block_index][0] * ceres::sin(theta) * dt;
-      theta += parameters[block_index][1] * dt;
+      x += parameters[block_index][kRobotLinearVelocityParam] * ceres::cos(theta) * dt;
+      y += parameters[block_index][kRobotLinearVelocityParam] * ceres::sin(theta) * dt;
+      theta += parameters[block_index][kRobotAngularVelocityParam] * dt;
     }
     else
     {
-      x += parameters[(control_horizon - 1) / block_size][0] * ceres::cos(theta) * dt;
-      y += parameters[(control_horizon - 1) / block_size][0] * ceres::sin(theta) * dt;
-      theta += parameters[(control_horizon - 1) / block_size][1] * dt;
+      x += parameters[(control_horizon - 1) / block_size][kRobotLinearVelocityParam] * ceres::cos(theta) * dt;
+      y += parameters[(control_horizon - 1) / block_size][kRobotLinearVelocityParam] * ceres::sin(theta) * dt;
+      theta += parameters[(control_horizon - 1) / block_size][kRobotAngularVelocityParam] * dt;
     }
   }
   return std::make_tuple(x, y, theta);
@@ -80,16 +80,16 @@ std::tuple<T, T, T, std::vector<T>, std::vector<T>, std::vector<T>> computeAgent
   std::vector<T> agent_theta(tracked_agents, T(0.0));
   for (size_t idx = 0; idx < tracked_agents; ++idx)
   {
-    agent_x[idx] = T(agents[idx](0, 0));
-    agent_y[idx] = T(agents[idx](1, 0));
-    agent_theta[idx] = T(agents[idx](2, 0));
+    agent_x[idx] = T(agents[idx](kStateX, 0));
+    agent_y[idx] = T(agents[idx](kStateY, 0));
+    agent_theta[idx] = T(agents[idx](kStateYaw, 0));
   }
 
   // Sum the contributions of the control inputs for the first i steps.
   const T* const* robot_blocks = parameters;
   const T* const* agent_blocks = has_agent_blocks ? parameters + robot_block_count : nullptr;
   const unsigned int max_robot_index = robot_block_count > 0 ? robot_block_count - 1 : 0;
-  const unsigned int agent_stride = static_cast<unsigned int>(2 * num_agents);
+  const unsigned int agent_stride = static_cast<unsigned int>(kAgentVelocityParamStride * num_agents);
 
   for (unsigned int j = 0; j <= i; j++)
   {
@@ -105,18 +105,18 @@ std::tuple<T, T, T, std::vector<T>, std::vector<T>, std::vector<T>> computeAgent
     block_index = std::min(block_index, max_robot_index);
 
     const T* robot_block = robot_blocks[block_index];
-    x += robot_block[0] * ceres::cos(theta) * dt;
-    y += robot_block[0] * ceres::sin(theta) * dt;
-    theta += robot_block[1] * dt;
+    x += robot_block[kRobotLinearVelocityParam] * ceres::cos(theta) * dt;
+    y += robot_block[kRobotLinearVelocityParam] * ceres::sin(theta) * dt;
+    theta += robot_block[kRobotAngularVelocityParam] * dt;
 
     if (agent_blocks != nullptr && agent_stride > 0)
     {
       const T* agent_block = agent_blocks[block_index];
       for (size_t k = 0; k < tracked_agents; ++k)
       {
-        unsigned int idx = static_cast<unsigned int>(2 * k);
-        T vx = agent_block[idx];
-        T vy = agent_block[idx + 1];
+        unsigned int idx = static_cast<unsigned int>(kAgentVelocityParamStride * k);
+        T vx = agent_block[idx + kAgentVxParam];
+        T vy = agent_block[idx + kAgentVyParam];
         agent_x[k] += vx * dt;
         agent_y[k] += vy * dt;
         agent_theta[k] = ceres::atan2(vy, vx);
@@ -129,9 +129,9 @@ std::tuple<T, T, T, std::vector<T>, std::vector<T>, std::vector<T>> computeAgent
 }
 
 template <typename T>
-Eigen::Matrix<T, 6, Eigen::Dynamic> agentsToMatrix(const AgentsStates& agents)
+Eigen::Matrix<T, kStateSize, Eigen::Dynamic> agentsToMatrix(const AgentsStates& agents)
 {
-  Eigen::Matrix<T, 6, Eigen::Dynamic> matrix(6, static_cast<Eigen::Index>(agents.size()));
+  Eigen::Matrix<T, kStateSize, Eigen::Dynamic> matrix(kStateSize, static_cast<Eigen::Index>(agents.size()));
   for (size_t idx = 0; idx < agents.size(); ++idx)
   {
     matrix.col(static_cast<Eigen::Index>(idx)) = agents[idx].template cast<T>();
@@ -140,7 +140,7 @@ Eigen::Matrix<T, 6, Eigen::Dynamic> agentsToMatrix(const AgentsStates& agents)
 }
 
 template <typename T>
-std::tuple<T, T, T, Eigen::Matrix<T, 6, Eigen::Dynamic>> computeEnlargedState(
+std::tuple<T, T, T, Eigen::Matrix<T, kStateSize, Eigen::Dynamic>> computeEnlargedState(
     const geometry_msgs::msg::Pose& pose_0, const AgentsStates& agents, T const* const* parameters,
     unsigned int robot_block_count, bool has_agent_blocks, unsigned int num_agents, double dt, unsigned int i,
     unsigned int control_horizon, unsigned int block_size)
@@ -168,21 +168,21 @@ std::tuple<T, T, T, Eigen::Matrix<T, 6, Eigen::Dynamic>> computeEnlargedState(
   for (size_t k = 0; k < tracked_agents; ++k)
   {
     const Eigen::Index col = static_cast<Eigen::Index>(k);
-    if (agents_matrix(3, col) == T(-1.0))
+    if (agents_matrix(kStateTime, col) == T(-1.0))
     {
       continue;
     }
-    agents_matrix(0, col) = agent_x[k];
-    agents_matrix(1, col) = agent_y[k];
-    agents_matrix(2, col) = agent_theta[k];
-    agents_matrix(3, col) = T(i) * T(dt);
+    agents_matrix(kStateX, col) = agent_x[k];
+    agents_matrix(kStateY, col) = agent_y[k];
+    agents_matrix(kStateYaw, col) = agent_theta[k];
+    agents_matrix(kStateTime, col) = T(i) * T(dt);
     if (agent_block != nullptr)
     {
-      const unsigned int idx = static_cast<unsigned int>(2 * k);
-      const T vx = agent_block[idx];
-      const T vy = agent_block[idx + 1];
-      agents_matrix(4, col) = ceres::sqrt(vx * vx + vy * vy);
-      agents_matrix(5, col) = T(0.0);
+      const unsigned int idx = static_cast<unsigned int>(kAgentVelocityParamStride * k);
+      const T vx = agent_block[idx + kAgentVxParam];
+      const T vy = agent_block[idx + kAgentVyParam];
+      agents_matrix(kStateLinearVelocity, col) = ceres::sqrt(vx * vx + vy * vy);
+      agents_matrix(kStateAngularVelocity, col) = T(0.0);
     }
   }
 

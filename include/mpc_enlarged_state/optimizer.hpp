@@ -146,29 +146,29 @@ public:
   // x, y
   struct position
   {
-    double params[2];
+    double params[kPositionParameterBlockSize];
   };
 
   // x, y, lv, av
   struct posandvel
   {
-    double params[4];
+    double params[kPoseAndVelocityParameterBlockSize];
   };
 
   // lv, av
   struct vel
   {
-    double params[2];
+    double params[kRobotParameterBlockSize];
   };
 
   struct agent_velocity
   {
-    double params[2];  
+    double params[kAgentVelocityParamStride];  
   };
 
   struct optimizing_velocities
   {
-    double params[4];
+    double params[kPoseAndVelocityParameterBlockSize];
   };
   struct dynamic_optimizing_velocities
   {
@@ -177,7 +177,7 @@ public:
 
     void set_num_agents(size_t num_agents)
     {
-      agents.assign(2 * num_agents, 0.0);
+      agents.assign(kAgentVelocityParamStride * num_agents, 0.0);
     }
 
     double* robot_data()
@@ -208,15 +208,15 @@ public:
   // t, yaw
   struct heading
   {
-    double params[2];
+    double params[kHeadingParameterBlockSize];
   };
   struct linear_velocity
   {
-    double params[1];
+    double params[kScalarParameterBlockSize];
   };
   struct angular_velocity
   {
-    double params[1];
+    double params[kScalarParameterBlockSize];
   };
   Optimizer();
 

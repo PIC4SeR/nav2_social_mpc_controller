@@ -111,8 +111,8 @@ public:
     auto turning_angle = T(0.0);
     // compute the turning angle, difference between the goal heading and the robot heading
 
-    turning_angle = ceres::atan2(ceres::sin(goal_heading_[1] - new_position_orientation),
-                                 ceres::cos(goal_heading_[1] - new_position_orientation));
+    turning_angle = ceres::atan2(ceres::sin(goal_heading_[kHeadingYawParam] - new_position_orientation),
+                                 ceres::cos(goal_heading_[kHeadingYawParam] - new_position_orientation));
     residuals[0] = (T)weight_ * turning_angle * turning_angle;
 
     return true;
@@ -132,8 +132,8 @@ public:
     /*auto [x, y, theta] = robot_pose_;
 
     T turning_angle = ceres::atan2(
-        ceres::sin(T(goal_heading_[1]) - theta),
-        ceres::cos(T(goal_heading_[1]) - theta));
+        ceres::sin(T(goal_heading_[kHeadingYawParam]) - theta),
+        ceres::cos(T(goal_heading_[kHeadingYawParam]) - theta));
 
     residuals[0] = T(weight_) * turning_angle * turning_angle;
     return true;*/

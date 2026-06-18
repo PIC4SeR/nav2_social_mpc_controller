@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MPC_ENLARGED_STATE__AGENT_SFM_DYNAMICS_COST_FUNCTION_HPP_
-#define MPC_ENLARGED_STATE__AGENT_SFM_DYNAMICS_COST_FUNCTION_HPP_
+#ifndef MPC_ENLARGED_STATE__AGENT_ORCA_DYNAMICS_COST_FUNCTION_HPP_
+#define MPC_ENLARGED_STATE__AGENT_ORCA_DYNAMICS_COST_FUNCTION_HPP_
 
 #include <algorithm>
 #include <vector>
@@ -27,28 +27,50 @@
 namespace mpc_enlarged_state
 {
 
-class AgentSfmDynamicsCost
+// Soft, autodiff-friendly ORCA-style dynamics critic.
+//
+// Mirrors the residual shape of AgentSfmDynamicsCost so it can be swapped in
+// place. Per active agent we emit two residuals matching the optimized
+// acceleration against an ORCA-derived target acceleration:
+//
+//   residual = sqrt(weight) * ( (v_k - v_{k-1}) / Δt - a_target )
+//
+// The target velocity is the preferred velocity (reference) plus, for every
+// neighbor (robot and other agents), a smoothed reciprocal correction that
+// pushes the relative velocity out of the τ-horizon cutoff disk of the
+// velocity obstacle:
+//
+//   w        = v_rel - p_rel / τ
+//   violation = R_comb / τ - ||w||           // > 0 inside the danger disk
+//   correction = 0.5 * smooth_max(violation, 0) * w / ||w||
+//
+// smooth_max is a quadratic-softplus so the residual stays differentiable when
+// neighbors enter/leave the danger disk. ORCA leg projections (collisions
+// outside τ but inside the velocity-obstacle wedge) are intentionally omitted;
+// they add branchy projections that hurt autodiff stability. The cutoff-disk
+// term alone is the conservative core of ORCA and behaves smoothly.
+class AgentOrcaDynamicsCost
 {
 public:
-  using AgentSfmDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentSfmDynamicsCost>;
+  using AgentOrcaDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentOrcaDynamicsCost>;
 
-  AgentSfmDynamicsCost(double weight, double max_accel, const AgentsStates& agents_init,
-                       const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
-                       unsigned int control_horizon, unsigned int block_length, unsigned int parameter_block_count,
-                       bool has_agent_parameters, unsigned int agent_count);
+  AgentOrcaDynamicsCost(double weight, double max_accel, const AgentsStates& agents_init,
+                        const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
+                        unsigned int control_horizon, unsigned int block_length, unsigned int parameter_block_count,
+                        bool has_agent_parameters, unsigned int agent_count);
 
-  inline static AgentSfmDynamicsCostFunction* Create(double weight, double max_accel,
-                                                     const AgentsStates& agents_init,
-                                                     const geometry_msgs::msg::Pose& robot_init,
-                                                     unsigned int current_position, double time_step,
-                                                     unsigned int control_horizon, unsigned int block_length,
-                                                     unsigned int parameter_block_count, bool has_agent_parameters,
-                                                     unsigned int agent_count)
+  inline static AgentOrcaDynamicsCostFunction* Create(double weight, double max_accel,
+                                                      const AgentsStates& agents_init,
+                                                      const geometry_msgs::msg::Pose& robot_init,
+                                                      unsigned int current_position, double time_step,
+                                                      unsigned int control_horizon, unsigned int block_length,
+                                                      unsigned int parameter_block_count, bool has_agent_parameters,
+                                                      unsigned int agent_count)
   {
-    return new AgentSfmDynamicsCostFunction(
-        new AgentSfmDynamicsCost(weight, max_accel, agents_init, robot_init, current_position, time_step,
-                                 control_horizon, block_length, parameter_block_count, has_agent_parameters,
-                                 agent_count));
+    return new AgentOrcaDynamicsCostFunction(
+        new AgentOrcaDynamicsCost(weight, max_accel, agents_init, robot_init, current_position, time_step,
+                                  control_horizon, block_length, parameter_block_count, has_agent_parameters,
+                                  agent_count));
   }
 
   template <typename T>
@@ -107,17 +129,19 @@ public:
                                             T(reference_velocities_[idx + kAgentVyParam]));
 
       Eigen::Matrix<T, 2, 1> optimized_accel = (current_velocity - previous_velocity) / transition_dt;
-      Eigen::Matrix<T, 2, 1> sfm_accel =
-          computeSocialAcceleration(agent_position, current_velocity, robot_position, robot_velocity, agents,
-                                    current_agent_block, agent_idx);
 
       Eigen::Matrix<T, 2, 1> reference_velocity(T(reference_velocities_[idx + kAgentVxParam]),
                                                 T(reference_velocities_[idx + kAgentVyParam]));
-      sfm_accel += (reference_velocity - current_velocity) / T(sfm_relaxation_time_);
-      clampAcceleration(sfm_accel);
+      Eigen::Matrix<T, 2, 1> velocity_correction =
+          accumulateOrcaCorrections(agent_position, current_velocity, robot_position, robot_velocity, agents,
+                                    current_agent_block, agent_idx);
 
-      residuals[idx + kAgentVxParam] = T(sqrt_weight_) * (optimized_accel[kX] - sfm_accel[kX]);
-      residuals[idx + kAgentVyParam] = T(sqrt_weight_) * (optimized_accel[kY] - sfm_accel[kY]);
+      Eigen::Matrix<T, 2, 1> target_velocity = reference_velocity + velocity_correction;
+      Eigen::Matrix<T, 2, 1> target_accel = (target_velocity - current_velocity) / T(orca_relaxation_time_);
+      clampAcceleration(target_accel);
+
+      residuals[idx + kAgentVxParam] = T(sqrt_weight_) * (optimized_accel[kX] - target_accel[kX]);
+      residuals[idx + kAgentVyParam] = T(sqrt_weight_) * (optimized_accel[kY] - target_accel[kY]);
     }
 
     return true;
@@ -125,14 +149,15 @@ public:
 
 private:
   template <typename T>
-  Eigen::Matrix<T, 2, 1> computeSocialAcceleration(
+  Eigen::Matrix<T, 2, 1> accumulateOrcaCorrections(
       const Eigen::Matrix<T, 2, 1>& agent_position, const Eigen::Matrix<T, 2, 1>& agent_velocity,
       const Eigen::Matrix<T, 2, 1>& robot_position, const Eigen::Matrix<T, 2, 1>& robot_velocity,
       const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents, const T* const current_agent_block,
       unsigned int agent_idx) const
   {
-    Eigen::Matrix<T, 2, 1> acceleration = computePairwiseSocialForce(agent_position, agent_velocity,
-                                                                      robot_position, robot_velocity);
+    Eigen::Matrix<T, 2, 1> correction =
+        pairwiseOrcaCorrection(agent_position, agent_velocity, robot_position, robot_velocity, T(robot_radius_));
+
     for (unsigned int other_idx = 0; other_idx < agent_count_; ++other_idx)
     {
       if (other_idx == agent_idx || !active_agents_[other_idx])
@@ -144,43 +169,41 @@ private:
       Eigen::Matrix<T, 2, 1> other_position(agents(kStateX, col), agents(kStateY, col));
       Eigen::Matrix<T, 2, 1> other_velocity(current_agent_block[idx + kAgentVxParam],
                                             current_agent_block[idx + kAgentVyParam]);
-      acceleration += computePairwiseSocialForce(agent_position, agent_velocity, other_position, other_velocity);
+      correction +=
+          pairwiseOrcaCorrection(agent_position, agent_velocity, other_position, other_velocity, T(agent_radius_));
     }
 
-    return acceleration;
+    return correction;
   }
 
+  // Smoothed cutoff-disk ORCA correction for one neighbor. Returns the velocity
+  // adjustment "me" should apply (reciprocal half of the full correction).
   template <typename T>
-  Eigen::Matrix<T, 2, 1> computePairwiseSocialForce(const Eigen::Matrix<T, 2, 1>& me_position,
-                                                    const Eigen::Matrix<T, 2, 1>& me_velocity,
-                                                    const Eigen::Matrix<T, 2, 1>& other_position,
-                                                    const Eigen::Matrix<T, 2, 1>& other_velocity) const
+  Eigen::Matrix<T, 2, 1> pairwiseOrcaCorrection(const Eigen::Matrix<T, 2, 1>& me_position,
+                                                const Eigen::Matrix<T, 2, 1>& me_velocity,
+                                                const Eigen::Matrix<T, 2, 1>& other_position,
+                                                const Eigen::Matrix<T, 2, 1>& other_velocity,
+                                                const T& other_radius) const
   {
     const T eps = T(1e-6);
-    Eigen::Matrix<T, 2, 1> diff = me_position - other_position;
-    T distance = ceres::sqrt(diff.squaredNorm() + eps * eps);
-    Eigen::Matrix<T, 2, 1> diff_direction = diff / distance;
+    const T inv_tau = T(1.0) / T(orca_time_horizon_);
+    const T combined_radius = T(agent_radius_) + other_radius;
 
-    Eigen::Matrix<T, 2, 1> velocity_diff = me_velocity - other_velocity;
-    Eigen::Matrix<T, 2, 1> interaction_vector = T(sfm_lambda_) * velocity_diff + diff_direction;
-    T interaction_length = ceres::sqrt(interaction_vector.squaredNorm() + eps * eps);
-    Eigen::Matrix<T, 2, 1> interaction_direction = interaction_vector / interaction_length;
+    Eigen::Matrix<T, 2, 1> relative_position = other_position - me_position;
+    Eigen::Matrix<T, 2, 1> relative_velocity = me_velocity - other_velocity;
+    Eigen::Matrix<T, 2, 1> cutoff_center = relative_position * inv_tau;
+    Eigen::Matrix<T, 2, 1> w = relative_velocity - cutoff_center;
 
-    T theta = ceres::atan2(ceres::sin(ceres::atan2(diff_direction[kY], diff_direction[kX]) -
-                                      ceres::atan2(interaction_direction[kY], interaction_direction[kX])),
-                           ceres::cos(ceres::atan2(diff_direction[kY], diff_direction[kX]) -
-                                      ceres::atan2(interaction_direction[kY], interaction_direction[kX])));
-    T b = T(sfm_gamma_) * interaction_length + eps;
-    T velocity_term = T(sfm_n_prime_) * b * theta;
-    T force_velocity_amount = ceres::exp(-distance / b - velocity_term * velocity_term);
-    T sign = theta > T(0.0) ? T(1.0) : T(-1.0);
-    T angle_term = T(sfm_n_) * b * theta;
-    T force_angle_amount = sign * ceres::exp(-distance / b - angle_term * angle_term);
+    T w_norm = ceres::sqrt(w.squaredNorm() + eps * eps);
+    Eigen::Matrix<T, 2, 1> unit_w = w / w_norm;
+    T required_radius = combined_radius * inv_tau;
+    T violation = required_radius - w_norm;  // > 0 means inside τ-disk
 
-    Eigen::Matrix<T, 2, 1> force_velocity = force_velocity_amount * interaction_direction;
-    Eigen::Matrix<T, 2, 1> left_normal(-interaction_direction[kY], interaction_direction[kX]);
-    Eigen::Matrix<T, 2, 1> force_angle = force_angle_amount * left_normal;
-    return T(sfm_force_factor_social_) * (force_velocity + force_angle);
+    // Smooth max(violation, 0) via quadratic softplus.
+    T smooth_eps = T(orca_smoothing_);
+    T smooth_violation = T(0.5) * (violation + ceres::sqrt(violation * violation + smooth_eps * smooth_eps));
+
+    return T(0.5) * smooth_violation * unit_w;
   }
 
   template <typename T>
@@ -211,14 +234,13 @@ private:
   unsigned int agent_count_;
   std::vector<double> reference_velocities_;
   std::vector<bool> active_agents_;
-  double sfm_lambda_;
-  double sfm_gamma_;
-  double sfm_n_prime_;
-  double sfm_n_;
-  double sfm_relaxation_time_;
-  double sfm_force_factor_social_;
+  double orca_time_horizon_;
+  double orca_relaxation_time_;
+  double orca_smoothing_;
+  double agent_radius_;
+  double robot_radius_;
 };
 
 }  // namespace mpc_enlarged_state
 
-#endif  // MPC_ENLARGED_STATE__AGENT_SFM_DYNAMICS_COST_FUNCTION_HPP_
+#endif  // MPC_ENLARGED_STATE__AGENT_ORCA_DYNAMICS_COST_FUNCTION_HPP_

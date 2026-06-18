@@ -85,12 +85,12 @@ public:
       }
 
       const Eigen::Index col = static_cast<Eigen::Index>(agent_idx);
-      Eigen::Matrix<T, 2, 1> agent_position(agents(0, col), agents(1, col));
+      Eigen::Matrix<T, 2, 1> agent_position(agents(kStateX, col), agents(kStateY, col));
       Eigen::Matrix<T, 2, 1> costmap_position =
           (agent_position - costmap_origin_.template cast<T>()) / T(costmap_resolution_);
 
       T value;
-      costmap_interpolator_->Evaluate(costmap_position[1], costmap_position[0], &value);
+      costmap_interpolator_->Evaluate(costmap_position[kY], costmap_position[kX], &value);
       residuals[agent_idx] = T(sqrt_weight_) * value / T(255.0);
     }
 

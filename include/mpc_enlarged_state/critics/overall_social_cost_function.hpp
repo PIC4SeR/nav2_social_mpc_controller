@@ -102,77 +102,80 @@ public:
   bool operator()(T const* const* parameters, T* residuals) const
   {
     // Compute robot social work
-    Eigen::Matrix<T, 6, Eigen::Dynamic> agents = original_agents_.template cast<T>();
-    Eigen::Matrix<T, 6, 1> robot;
+    Eigen::Matrix<T, kStateSize, Eigen::Dynamic> agents = original_agents_.template cast<T>();
+    Eigen::Matrix<T, kStateSize, 1> robot;
     auto [new_position_x, new_position_y, new_position_orientation, agent_x, agent_y, agent_theta] = computeAgentandRobotState(
         robot_init_, agents_init_, parameters, parameter_block_count_, has_agent_parameters_, agent_index_, time_step_,
         current_position_, control_horizon_, block_length_);
-    robot(0, 0) = (T)new_position_x;                // x
-    robot(1, 0) = (T)new_position_y;                // y
-    robot(2, 0) = (T)new_position_orientation;      // yaw
-    robot(3, 0) = (T)current_position_*time_step_;  // t
+    robot(kStateX, 0) = (T)new_position_x;                // x
+    robot(kStateY, 0) = (T)new_position_y;                // y
+    robot(kStateYaw, 0) = (T)new_position_orientation;    // yaw
+    robot(kStateTime, 0) = (T)current_position_*time_step_;  // t
     unsigned int block_idx = (current_position_ < control_horizon_) ?
         (current_position_ / block_length_) :
         ((control_horizon_ - 1) / block_length_);
     block_idx = std::min(block_idx, parameter_block_count_ - 1);
-    robot(4, 0) = parameters[block_idx][0];  // lv
-    robot(5, 0) = parameters[block_idx][1];  // av
+    robot(kStateLinearVelocity, 0) = parameters[block_idx][kRobotLinearVelocityParam];   // lv
+    robot(kStateAngularVelocity, 0) = parameters[block_idx][kRobotAngularVelocityParam];  // av
   const size_t total_agents = static_cast<size_t>(agents.cols());
   const size_t capped_agents = std::min(static_cast<size_t>(agent_index_), total_agents);
   const bool has_valid_agents =
-      std::any_of(agents_init_.begin(), agents_init_.end(), [](const AgentStatus& st) { return st[3] != -1.0; }) &&
+      std::any_of(agents_init_.begin(), agents_init_.end(),
+                  [](const AgentStatus& st) { return st[kStateTime] != -1.0; }) &&
       capped_agents > 0;
   const bool social_terms_active = found_people_ && has_valid_agents;
 
     if (social_terms_active) {
       for (size_t k = 0; k < capped_agents; ++k) {
         const Eigen::Index agent_col = static_cast<Eigen::Index>(k);
-        if (agents(3, agent_col) == (T)-1.0)
+        if (agents(kStateTime, agent_col) == (T)-1.0)
         {
           continue;
         }
 
-        agents(0, agent_col) = agent_x[k];
-        agents(1, agent_col) = agent_y[k];
-        agents(2, agent_col) = agent_theta[k];
-        agents(3, agent_col) = (T)current_position_ * time_step_;
+        agents(kStateX, agent_col) = agent_x[k];
+        agents(kStateY, agent_col) = agent_y[k];
+        agents(kStateYaw, agent_col) = agent_theta[k];
+        agents(kStateTime, agent_col) = (T)current_position_ * time_step_;
 
         unsigned block_idx = (current_position_ < control_horizon_) ?
             (current_position_ / block_length_) :
             ((control_horizon_ - 1) / block_length_);
         block_idx = std::min(block_idx, parameter_block_count_ - 1);
-        unsigned param_offset = static_cast<unsigned>(2 * k);
+        unsigned param_offset = static_cast<unsigned>(kAgentVelocityParamStride * k);
         const T* agent_block = has_agent_parameters_ ? parameters[parameter_block_count_ + block_idx] : nullptr;
-        T vx = agent_block ? agent_block[param_offset] : T(0.0);
-        T vy = agent_block ? agent_block[param_offset + 1] : T(0.0);
-        agents(4, agent_col) = ceres::sqrt(vx * vx + vy * vy);
-        agents(5, agent_col) = T(0.0);
+        T vx = agent_block ? agent_block[param_offset + kAgentVxParam] : T(0.0);
+        T vy = agent_block ? agent_block[param_offset + kAgentVyParam] : T(0.0);
+        agents(kStateLinearVelocity, agent_col) = ceres::sqrt(vx * vx + vy * vy);
+        agents(kStateAngularVelocity, agent_col) = T(0.0);
       }
     }
-    residuals[0] = (T)0.0;  // Initialize residual to zero for social work
-    residuals[1] = (T)0.0;  // Initialize residual to zero for agent angle
-    residuals[2] = (T)0.0;  // Initialize residual to zero for proxemics cost
-    residuals[3] = (T)0.0;  // Initialize residual to zero for path following
-    residuals[4] = (T)0.0;  // Initialize residual to zero for path alignment
+    residuals[kSocialWorkResidual] = (T)0.0;
+    residuals[kSocialAngleResidual] = (T)0.0;
+    residuals[kProxemicsResidual] = (T)0.0;
+    residuals[kPathFollowResidual] = (T)0.0;
+    residuals[kPathAlignResidual] = (T)0.0;
 
   if (social_terms_active && use_social_work_cost_) {
-    residuals[0] += usingSocialWork(robot, agents);
+    residuals[kSocialWorkResidual] += usingSocialWork(robot, agents);
     }
     if (social_terms_active && use_angle_cost_) {
-    residuals[1] += usingAngle(robot, robot_init_, agents);
+    residuals[kSocialAngleResidual] += usingAngle(robot, robot_init_, agents);
     }
     if (social_terms_active && use_proxemics_cost_) {
-    residuals[2] += usingProxemics(robot, agents);
+    residuals[kProxemicsResidual] += usingProxemics(robot, agents);
     }
     if (use_path_follow_cost_ == true){
       Eigen::Matrix<T, 2, 1> p((T)new_position_x, (T)new_position_y);
-      Eigen::Matrix<T, 2, 1> p_target((T)final_point_[0], (T)final_point_[1]);
-      residuals[3] = T(path_follow_weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
+      Eigen::Matrix<T, 2, 1> p_target((T)final_point_[kX], (T)final_point_[kY]);
+      residuals[kPathFollowResidual] =
+          T(path_follow_weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
     }
     if (use_path_align_cost_ == true) {
       Eigen::Matrix<T, 2, 1> p((T)new_position_x, (T)new_position_y);
-      Eigen::Matrix<T, 2, 1> p_target((T)point_[0], (T)point_[1]);
-      residuals[4] = T(path_align_weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
+      Eigen::Matrix<T, 2, 1> p_target((T)point_[kX], (T)point_[kY]);
+      residuals[kPathAlignResidual] =
+          T(path_align_weight_) * (p - p_target).squaredNorm() * (p - p_target).squaredNorm();
     }
     return true;
   }
@@ -190,7 +193,8 @@ public:
    * @return Eigen::Matrix<T, 2, 1> the computed social force acting on the robot
    */
   template <typename T>
-  T usingSocialWork(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
+  T usingSocialWork(const Eigen::Matrix<T, kStateSize, 1> robot,
+                    const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents) const
   {
     if (agents.cols() == 0)
     {
@@ -202,11 +206,11 @@ public:
 
     // compute agents' social work provoked by the robot
     T wp = (T)0.0;
-    Eigen::Matrix<T, 6, Eigen::Dynamic> robot_agent(6, 1);
+    Eigen::Matrix<T, kStateSize, Eigen::Dynamic> robot_agent(kStateSize, 1);
     robot_agent.col(0) = robot;  // Robot reference for social force on agents
     for (Eigen::Index i = 0; i < agents.cols(); i++)              // Iterate through each agent
     {
-      Eigen::Matrix<T, 6, 1> ag = agents.col(i);
+      Eigen::Matrix<T, kStateSize, 1> ag = agents.col(i);
       Eigen::Matrix<T, 2, 1> agent_sf = computeSocialForce(ag, robot_agent);  // Compute social force on agent
       wp += (T)agent_sf.squaredNorm();  // Accumulate the squared norm of the social force on the agent
     }
@@ -215,7 +219,8 @@ public:
     return (T)total_social_force_magnitude_sq * (T)work_weight_;  // Return the total social force magnitude scaled by weight
   }
   template <typename T>
-  T usingProxemics(const Eigen::Matrix<T, 6, 1> robot, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
+  T usingProxemics(const Eigen::Matrix<T, kStateSize, 1> robot,
+                   const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents) const
   {
 
     if (agents.cols() == 0)
@@ -227,7 +232,8 @@ public:
     return (T)proxemics_weight_ * proxemics_cost;           // Scale the proxemics cost by the weight
   }
   template <typename T>
-  T usingAngle(const Eigen::Matrix<T,6,1> robot,const geometry_msgs::msg::Pose robot_init_, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents)
+  T usingAngle(const Eigen::Matrix<T, kStateSize, 1> robot,const geometry_msgs::msg::Pose robot_init_,
+               const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents)
    const
   {
     if (agents.cols() == 0)
@@ -239,10 +245,10 @@ public:
     T closest_distance_squared = T(9999.0);
   for (Eigen::Index i = 0; i < agents.cols(); i++)
     {
-      T dx = agents(0,i) - T(robot_init_.position.x);
-      T dy = agents(1,i) - T(robot_init_.position.y);
+      T dx = agents(kStateX,i) - T(robot_init_.position.x);
+      T dy = agents(kStateY,i) - T(robot_init_.position.y);
       T distance_squared = dx * dx + dy * dy;
-      if (distance_squared < closest_distance_squared && agents(4,i) > T(0.05))
+      if (distance_squared < closest_distance_squared && agents(kStateLinearVelocity,i) > T(0.05))
       {
         closest_distance_squared = distance_squared;
         closest_index = i;
@@ -252,12 +258,14 @@ public:
     {
       return T(0.0);  // If no valid agent is found, return zero cost
     }
-  Eigen::Matrix<T,6,1> agent = agents.col(closest_index);
+  Eigen::Matrix<T, kStateSize, 1> agent = agents.col(closest_index);
     // Compute angles.
-    T agent_angle_initial = ceres::atan2(T(agent[1] - robot_init_.position.y), T(agent[0] - robot_init_.position.x));
+    T agent_angle_initial =
+        ceres::atan2(T(agent[kStateY] - robot_init_.position.y), T(agent[kStateX] - robot_init_.position.x));
     T robot_yaw = T(tf2::getYaw(robot_init_.orientation));
     // Difference between agent's heading and the robot's initial orientation.
-    T agent_heading_diff = ceres::atan2(ceres::sin(T(agent[2]) - robot_yaw), ceres::cos(T(agent[2]) - robot_yaw));
+    T agent_heading_diff =
+        ceres::atan2(ceres::sin(T(agent[kStateYaw]) - robot_yaw), ceres::cos(T(agent[kStateYaw]) - robot_yaw));
     // Helper to wrap angles into [-pi, pi].
     auto wrapAngle = [](const T& angle) -> T { return ceres::atan2(ceres::sin(angle), ceres::cos(angle)); };
 
@@ -277,7 +285,7 @@ public:
       }
       else
       {
-        angular_diff = wrapAngle(robot(2,0) - (robot_yaw + steering_right));
+        angular_diff = wrapAngle(robot(kStateYaw,0) - (robot_yaw + steering_right));
       }
     }
 
@@ -289,27 +297,27 @@ public:
       }
       else
       {
-        angular_diff = wrapAngle(robot(2,0)- (robot_yaw + steering_left));
+        angular_diff = wrapAngle(robot(kStateYaw,0)- (robot_yaw + steering_left));
       }
     }
     T cost = angular_diff * angular_diff;
     return (T)angle_weight_ * cost;
   }
   template <typename T>
-  Eigen::Matrix<T, 2, 1> computeSocialForce(const Eigen::Matrix<T, 6, 1>& me,
-                                            const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
+  Eigen::Matrix<T, 2, 1> computeSocialForce(const Eigen::Matrix<T, kStateSize, 1>& me,
+                                            const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents) const
   {
     Eigen::Matrix<T, 2, 1> meSocialforce((T)0.0, (T)0.0);  // Initialize the social force vector
-    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);            // Extract the position of the robot
-    Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
-                                 me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
+    Eigen::Matrix<T, 2, 1> mePos(me[kStateX], me[kStateY]);  // Extract the position of the robot
+    Eigen::Matrix<T, 2, 1> meVel(me[kStateLinearVelocity] * ceres::cos(me[kStateYaw]),
+                                 me[kStateLinearVelocity] * ceres::sin(me[kStateYaw]));  // Extract velocity
 
   for (Eigen::Index i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
-      if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
+      if (agents(kStateTime, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
         continue;
 
-      Eigen::Matrix<T, 2, 1> aPos(agents(0, i), agents(1, i));  // Extract the position of the agent
+      Eigen::Matrix<T, 2, 1> aPos(agents(kStateX, i), agents(kStateY, i));  // Extract the position of the agent
       Eigen::Matrix<T, 2, 1> diff =
           mePos - aPos;           // Calculate the difference in position between the robot and the agent
       if (diff.norm() < (T)1e-6)  // If the robot and agent are at the same position
@@ -318,9 +326,9 @@ public:
       }
       Eigen::Matrix<T, 2, 1> diffDirection = diff.normalized();  // Normalize the difference vector
 
-  T agent_speed = agents(4, i);
-  Eigen::Matrix<T, 2, 1> aVel(agent_speed * ceres::cos(agents(2, i)),
-              agent_speed * ceres::sin(agents(2, i)));  // Extract the velocity of the agent
+  T agent_speed = agents(kStateLinearVelocity, i);
+  Eigen::Matrix<T, 2, 1> aVel(agent_speed * ceres::cos(agents(kStateYaw, i)),
+              agent_speed * ceres::sin(agents(kStateYaw, i)));  // Extract the velocity of the agent
       Eigen::Matrix<T, 2, 1> velDiff =
           meVel - aVel;  // Calculate the difference in velocity between the robot and the agent
       Eigen::Matrix<T, 2, 1> interactionVector =
@@ -330,9 +338,9 @@ public:
       Eigen::Matrix<T, 2, 1> interactionDirection =
           interactionVector / interactionLength;  // Normalize the interaction vector
 
-      T theta = wrapToPi(ceres::atan2(diffDirection[1], diffDirection[0]) -
-                         ceres::atan2(interactionDirection[1],
-                                      interactionDirection[0]));  // Calculate the angle between the difference
+      T theta = wrapToPi(ceres::atan2(diffDirection[kY], diffDirection[kX]) -
+                         ceres::atan2(interactionDirection[kY],
+                                      interactionDirection[kX]));  // Calculate the angle between the difference
                                                                   // direction and the interaction direction
 
       T B = (T)sfm_gamma_ *
@@ -352,8 +360,8 @@ public:
 
       Eigen::Matrix<T, 2, 1> forceVelocity =
           forceVelocityAmount * interactionDirection;  // Calculate the force velocity vector
-      Eigen::Matrix<T, 2, 1> leftNormalVector(-interactionDirection[1],
-                                              interactionDirection[0]);         // Calculate the left normal vector
+      Eigen::Matrix<T, 2, 1> leftNormalVector(-interactionDirection[kY],
+                                              interactionDirection[kX]);        // Calculate the left normal vector
       Eigen::Matrix<T, 2, 1> forceAngle = forceAngleAmount * leftNormalVector;  // Calculate the force angle vector
 
       meSocialforce += (T)sfm_forceFactorSocial_ * (forceVelocity + forceAngle);  // Accumulate the social force
@@ -362,19 +370,20 @@ public:
     return meSocialforce;
   }
   template <typename T>
-  T computeProxemics(const Eigen::Matrix<T, 6, 1>& me, const Eigen::Matrix<T, 6, Eigen::Dynamic>& agents) const
+  T computeProxemics(const Eigen::Matrix<T, kStateSize, 1>& me,
+                     const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents) const
   {
     T min_distance(1000.0);  // Initialize minimum distance to a large value
-    Eigen::Matrix<T, 2, 1> mePos(me[0], me[1]);        // Extract the position of the robot
-    Eigen::Matrix<T, 2, 1> meVel(me[4] * ceres::cos(me[2]),
-                                 me[4] * ceres::sin(me[2]));  // Extract the velocity of the robot
+    Eigen::Matrix<T, 2, 1> mePos(me[kStateX], me[kStateY]);  // Extract the position of the robot
+    Eigen::Matrix<T, 2, 1> meVel(me[kStateLinearVelocity] * ceres::cos(me[kStateYaw]),
+                                 me[kStateLinearVelocity] * ceres::sin(me[kStateYaw]));  // Extract velocity
 
   for (Eigen::Index i = 0; i < agents.cols(); i++)  // Iterate through each agent
     {
-      if (agents(3, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
+      if (agents(kStateTime, i) == (T)-1.0)  // Skip agents that are invalid (e.g., not present)
         continue;
 
-      Eigen::Matrix<T, 2, 1> aPos(agents(0, i), agents(1, i));  // Extract the position of the agent
+      Eigen::Matrix<T, 2, 1> aPos(agents(kStateX, i), agents(kStateY, i));  // Extract the position of the agent
       Eigen::Matrix<T, 2, 1> diff =
           mePos - aPos;                         // Calculate the difference in position between the robot and the agent
       T squared_distance = diff.squaredNorm();  // Calculate the squared distance between the robot and the agent
@@ -397,7 +406,7 @@ private:
   double proxemics_weight_;
   double path_follow_weight_;
   double path_align_weight_;
-  Eigen::Matrix<double, 6, Eigen::Dynamic> original_agents_;
+  Eigen::Matrix<double, kStateSize, Eigen::Dynamic> original_agents_;
   Eigen::Matrix<double, 2, 1> final_point_;  // Target point for
   Eigen::Matrix<double, 2, 1> point_;        // Point for path alignment
   AgentsStates agents_init_;  // Initial states of the agents

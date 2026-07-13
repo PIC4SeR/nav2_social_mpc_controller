@@ -109,6 +109,16 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   nav2_util::declare_parameter_if_not_declared(node, weights + "agent_sfm_dynamics_weight",
                                                rclcpp::ParameterValue(0.5));
   node->get_parameter(weights + "agent_sfm_dynamics_weight", agent_sfm_dynamics_w_);
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "agent_dynamics_model",
+                                               rclcpp::ParameterValue("sfm"));
+  node->get_parameter(local_name + "agent_dynamics_model", agent_dynamics_model_);
+  if (agent_dynamics_model_ != "sfm" && agent_dynamics_model_ != "orca" && agent_dynamics_model_ != "cv")
+  {
+    RCLCPP_ERROR(rclcpp::get_logger("optimizer"),
+                 "Invalid agent_dynamics_model '%s'. Valid values are sfm, orca, cv",
+                 agent_dynamics_model_.c_str());
+    throw std::runtime_error("Invalid parameter: agent_dynamics_model");
+  }
   nav2_util::declare_parameter_if_not_declared(node, weights + "agent_obstacle_weight", rclcpp::ParameterValue(1.0));
   node->get_parameter(weights + "agent_obstacle_weight", agent_obstacle_w_);
   nav2_util::declare_parameter_if_not_declared(node, weights + "obstacle_weight", rclcpp::ParameterValue(0.0));
@@ -204,6 +214,7 @@ void Optimizer::initialize(const OptimizerParams params)
   velocity_feasibility_w_ = params.velocity_feasibility_w_;
   agent_velocity_reference_w_ = params.agent_velocity_reference_w_;
   agent_sfm_dynamics_w_ = params.agent_sfm_dynamics_w_;
+  agent_dynamics_model_ = params.agent_dynamics_model_;
   agent_obstacle_w_ = params.agent_obstacle_w_;
   socialwork_w_ = params.socialwork_w_;
   distance_w_ = params.distance_w_;
@@ -504,15 +515,29 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
         agent_obstacle_function_f->SetNumResiduals(num_agents);
         problem.AddResidualBlock(agent_obstacle_function_f, NULL, social_parameter_blocks);
       }
-      if (agent_sfm_dynamics_w_ > 0.0 && i < control_horizon && i % block_length == 0)
+      // "cv" adds no dynamics critic: the per-block velocity-reference cost already
+      // pins agent velocities to the observed ones (constant-velocity model).
+      if (agent_sfm_dynamics_w_ > 0.0 && i < control_horizon && i % block_length == 0 &&
+          agent_dynamics_model_ != "cv")
       {
-        auto* agent_sfm_dynamics_function_f =
-            AgentSfmDynamicsCost::Create(agent_sfm_dynamics_w_, agent_max_accel_, people_states_for_cost,
-                                         evolving_poses[0].pose, i, time_step, control_horizon, block_length,
-                                         active_blocks, has_agent_parameters, num_agents);
-        add_enlarged_parameter_blocks(agent_sfm_dynamics_function_f, active_blocks, has_agent_parameters, num_agents);
-        agent_sfm_dynamics_function_f->SetNumResiduals(kAgentVelocityParamStride * num_agents);
-        problem.AddResidualBlock(agent_sfm_dynamics_function_f, NULL, social_parameter_blocks);
+        ceres::DynamicCostFunction* agent_dynamics_function_f;
+        if (agent_dynamics_model_ == "orca")
+        {
+          agent_dynamics_function_f =
+              AgentOrcaDynamicsCost::Create(agent_sfm_dynamics_w_, agent_max_accel_, people_states_for_cost,
+                                            evolving_poses[0].pose, i, time_step, control_horizon, block_length,
+                                            active_blocks, has_agent_parameters, num_agents);
+        }
+        else
+        {
+          agent_dynamics_function_f =
+              AgentSfmDynamicsCost::Create(agent_sfm_dynamics_w_, agent_max_accel_, people_states_for_cost,
+                                           evolving_poses[0].pose, i, time_step, control_horizon, block_length,
+                                           active_blocks, has_agent_parameters, num_agents);
+        }
+        add_enlarged_parameter_blocks(agent_dynamics_function_f, active_blocks, has_agent_parameters, num_agents);
+        agent_dynamics_function_f->SetNumResiduals(kAgentVelocityParamStride * num_agents);
+        problem.AddResidualBlock(agent_dynamics_function_f, NULL, social_parameter_blocks);
       }
     }
     if (use_social_path_follow_cost_)

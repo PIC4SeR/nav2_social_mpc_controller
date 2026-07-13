@@ -38,6 +38,7 @@
 // cost functions
 #include "mpc_enlarged_state/critics/agent_angle_cost_function.hpp"
 #include "mpc_enlarged_state/critics/agent_obstacle_cost_function.hpp"
+#include "mpc_enlarged_state/critics/agent_orca_dynamics_cost_function.hpp"
 #include "mpc_enlarged_state/critics/agent_sfm_dynamics_cost_function.hpp"
 #include "mpc_enlarged_state/critics/agent_velocity_reference_cost_function.hpp"
 #include "mpc_enlarged_state/critics/angle_cost_function.hpp"
@@ -98,6 +99,7 @@ struct OptimizerParams
   double velocity_feasibility_w_;
   double agent_velocity_reference_w_;
   double agent_sfm_dynamics_w_;
+  std::string agent_dynamics_model_;  // "sfm", "orca" or "cv"
   double agent_obstacle_w_;
   double goal_align_w_;
   double obstacle_w_;
@@ -292,6 +294,7 @@ private:
   double velocity_feasibility_w_;
   double agent_velocity_reference_w_;
   double agent_sfm_dynamics_w_;
+  std::string agent_dynamics_model_;
   double agent_obstacle_w_;
   double agent_angle_w_;
   double velocity_alignment_w_;

@@ -28,8 +28,23 @@ namespace mpc_enlarged_state
 {
 
 /**
- * @brief Cost that exponentially attracts the robot toward the final global goal
- *        when it is within a configurable activation radius.
+ * @brief Logarithmic attractive potential toward the final global goal.
+ *
+ * Uses the potential  U(d) = log(1 + d / ε)  where d is the Euclidean
+ * distance to the goal and ε = decay_distance controls the transition
+ * from linear to logarithmic behaviour.
+ *
+ * Properties:
+ *   • U(0) = 0  →  global minimum exactly at the goal.
+ *   • ∇U = 1/(d + ε)  →  gradient always points toward the goal.
+ *   • For d ≪ ε the potential is approximately linear  (d/ε),
+ *     giving a strong, predictable pull near the goal.
+ *   • For d ≫ ε it grows as log(d/ε), so it never overwhelms
+ *     path-tracking or obstacle-avoidance costs at large range.
+ *   • Smooth everywhere (no sigmoid, no barrier).
+ *
+ * The activation_radius parameter is kept in the constructor signature
+ * for backward API compatibility but is not used.
  */
 class GoalProximityCost
 {
@@ -41,7 +56,7 @@ public:
                     unsigned int current_position, double time_step, unsigned int control_horizon,
                     unsigned int block_length)
     : weight_(weight),
-      activation_radius_(std::max(activation_radius, 1e-3)),
+      activation_radius_(activation_radius),
       decay_distance_(std::max(decay_distance, 1e-3)),
       goal_pose_(goal_pose),
       robot_init_(robot_init),
@@ -72,25 +87,25 @@ public:
 
     T goal_x = (T)goal_pose_.position.x;
     T goal_y = (T)goal_pose_.position.y;
-    T dx = goal_x - (T)new_position_x;
-    T dy = goal_y - (T)new_position_y;
-    T dist = ceres::sqrt(dx * dx + dy * dy);
+    T dx = goal_x - new_position_x;
+    T dy = goal_y - new_position_y;
 
-    if (dist > (T)activation_radius_)
-    {
-      residuals[0] = T(0.0);
-      return true;
-    }
+    // Smooth distance: avoids zero-norm gradient issues
+    T dist = ceres::sqrt(dx * dx + dy * dy + T(1e-12));
 
-    T normalized = dist / (T)decay_distance_;
-    residuals[0] = (T)weight_ * (ceres::exp(normalized) - T(1.0));
+    // Logarithmic attractive potential:  U(d) = log(1 + d / ε)
+    //   • residual = 0 at the goal  (d = 0)
+    //   • gradient ∝ 1/(d + ε), always pointing toward the goal
+    //   • no sigmoid → no cost barrier
+    T epsilon = (T)decay_distance_;
+    residuals[0] = (T)weight_ * ceres::log(T(1.0) + dist / epsilon);
     return true;
   }
 
 private:
   double weight_;
-  double activation_radius_;
-  double decay_distance_;
+  double activation_radius_;  // kept for API compat, unused
+  double decay_distance_;     // ε: linear-to-log transition scale
   geometry_msgs::msg::Pose goal_pose_;
   geometry_msgs::msg::Pose robot_init_;
   unsigned int current_position_;

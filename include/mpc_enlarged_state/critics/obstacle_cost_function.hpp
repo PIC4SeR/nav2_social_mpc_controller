@@ -69,7 +69,7 @@ namespace mpc_enlarged_state
 class ObstacleCost
 {
 public:
-  using ObstacleCostFunction = ceres::DynamicAutoDiffCostFunction<ObstacleCost>;
+  using ObstacleCostFunction = ceres::DynamicAutoDiffCostFunction<ObstacleCost, /*Jet stride=*/16>;
 
   /**
   * @brief Constructor for the ObstacleCost.

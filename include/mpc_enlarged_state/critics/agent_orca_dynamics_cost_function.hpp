@@ -52,12 +52,13 @@ namespace mpc_enlarged_state
 class AgentOrcaDynamicsCost
 {
 public:
-  using AgentOrcaDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentOrcaDynamicsCost>;
+  using AgentOrcaDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentOrcaDynamicsCost, /*Jet stride=*/16>;
 
   AgentOrcaDynamicsCost(double weight, double max_accel, const AgentsStates& agents_init,
                         const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
                         unsigned int control_horizon, unsigned int block_length, unsigned int parameter_block_count,
-                        bool has_agent_parameters, unsigned int agent_count);
+                        bool has_agent_parameters, unsigned int agent_count,
+                        const std::vector<double>& cooperation, const OrcaPredictionParams& orca);
 
   inline static AgentOrcaDynamicsCostFunction* Create(double weight, double max_accel,
                                                       const AgentsStates& agents_init,
@@ -65,12 +66,14 @@ public:
                                                       unsigned int current_position, double time_step,
                                                       unsigned int control_horizon, unsigned int block_length,
                                                       unsigned int parameter_block_count, bool has_agent_parameters,
-                                                      unsigned int agent_count)
+                                                      unsigned int agent_count,
+                                                      const std::vector<double>& cooperation,
+                                                      const OrcaPredictionParams& orca)
   {
     return new AgentOrcaDynamicsCostFunction(
         new AgentOrcaDynamicsCost(weight, max_accel, agents_init, robot_init, current_position, time_step,
                                   control_horizon, block_length, parameter_block_count, has_agent_parameters,
-                                  agent_count));
+                                  agent_count, cooperation, orca));
   }
 
   template <typename T>
@@ -155,7 +158,12 @@ private:
       const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents, const T* const current_agent_block,
       unsigned int agent_idx) const
   {
+    // Scale the reciprocal share this person is assumed to take for avoiding the
+    // robot: 1.0 leaves ORCA's standard half-and-half split, 0.0 predicts them
+    // taking no responsibility at all and holding course, which leaves the whole
+    // avoidance to the robot. Shares between people are always reciprocal.
     Eigen::Matrix<T, 2, 1> correction =
+        T(cooperation_[agent_idx]) *
         pairwiseOrcaCorrection(agent_position, agent_velocity, robot_position, robot_velocity, T(robot_radius_));
 
     for (unsigned int other_idx = 0; other_idx < agent_count_; ++other_idx)
@@ -234,6 +242,7 @@ private:
   unsigned int agent_count_;
   std::vector<double> reference_velocities_;
   std::vector<bool> active_agents_;
+  std::vector<double> cooperation_;
   double orca_time_horizon_;
   double orca_relaxation_time_;
   double orca_smoothing_;

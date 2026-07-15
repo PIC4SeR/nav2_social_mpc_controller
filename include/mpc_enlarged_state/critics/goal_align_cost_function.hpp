@@ -64,7 +64,7 @@ class GoalAlignCost
    */
 public:
 
-  using GoalAlignCostFuction = ceres::DynamicAutoDiffCostFunction<GoalAlignCost>;
+  using GoalAlignCostFuction = ceres::DynamicAutoDiffCostFunction<GoalAlignCost, /*Jet stride=*/16>;
   GoalAlignCost(double weight, const Eigen::Matrix<double, 2, 1> goal_heading, 
                 const geometry_msgs::msg::Pose robot_init,
                 unsigned int current_position, double time_step,

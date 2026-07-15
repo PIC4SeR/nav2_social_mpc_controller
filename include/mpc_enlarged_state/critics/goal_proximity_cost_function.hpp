@@ -49,7 +49,7 @@ namespace mpc_enlarged_state
 class GoalProximityCost
 {
 public:
-  using GoalProximityCostFunction = ceres::DynamicAutoDiffCostFunction<GoalProximityCost>;
+  using GoalProximityCostFunction = ceres::DynamicAutoDiffCostFunction<GoalProximityCost, /*Jet stride=*/16>;
 
   GoalProximityCost(double weight, double activation_radius, double decay_distance,
                     const geometry_msgs::msg::Pose& goal_pose, const geometry_msgs::msg::Pose& robot_init,

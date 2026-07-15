@@ -33,7 +33,7 @@ namespace mpc_enlarged_state
 class AgentObstacleCost
 {
 public:
-  using AgentObstacleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentObstacleCost>;
+  using AgentObstacleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentObstacleCost, /*Jet stride=*/16>;
 
   AgentObstacleCost(double weight, const nav2_costmap_2d::Costmap2D* costmap,
                     const std::shared_ptr<ceres::BiCubicInterpolator<ceres::Grid2D<u_char>>>& costmap_interpolator,

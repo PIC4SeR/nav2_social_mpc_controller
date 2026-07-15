@@ -40,7 +40,7 @@ class SocialOverallCost
    * the robot and the agents, and calculates the residuals based on these forces.
    */
 public:
-  using SocialOverallCostFunction = ceres::DynamicAutoDiffCostFunction<SocialOverallCost>;
+  using SocialOverallCostFunction = ceres::DynamicAutoDiffCostFunction<SocialOverallCost, /*Jet stride=*/16>;
 
   SocialOverallCost(double work_weight,double angle_weight, double proxemics_weight, 
                 double path_follow_weight, double path_align_weight, const Eigen::Matrix<double,2,1> final_point,

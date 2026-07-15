@@ -165,6 +165,55 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
                                                rclcpp::ParameterValue(0.8));
   nav2_util::declare_parameter_if_not_declared(node, local_name + "agent_association_radius",
                                                rclcpp::ParameterValue(0.75));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "agent_speed_window",
+                                               rclcpp::ParameterValue(5));
+  nav2_util::declare_parameter_if_not_declared(node, local_name + "human_cooperation_factor",
+                                               rclcpp::ParameterValue(1.0));
+  // Weight of the proxemics penalty applied to the humans that max_agents truncated away.
+  // They cost no decision variables (constant-velocity constants, robot blocks only), so this
+  // buys awareness of a crowd larger than max_agents almost for free. 0.0 disables it, which
+  // restores the previous behaviour of being blind to everyone past the cap.
+  nav2_util::declare_parameter_if_not_declared(node, weights + "background_agent_weight",
+                                               rclcpp::ParameterValue(0.0));
+  node->get_parameter(weights + "background_agent_weight", background_agent_weight);
+
+  // SFM parameters used to PREDICT the humans. Defaults mirror the simulated crowd
+  // (lightsfm defaults, with force_factor_social at HuNav's behavior.social_force_factor
+  // of 5.0 rather than lightsfm's 2.1) -- see SfmPredictionParams.
+  const std::string sfm_ns = local_name + "sfm.";
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "lambda", rclcpp::ParameterValue(sfm.lambda));
+  node->get_parameter(sfm_ns + "lambda", sfm.lambda);
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "gamma", rclcpp::ParameterValue(sfm.gamma));
+  node->get_parameter(sfm_ns + "gamma", sfm.gamma);
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "n", rclcpp::ParameterValue(sfm.n));
+  node->get_parameter(sfm_ns + "n", sfm.n);
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "n_prime", rclcpp::ParameterValue(sfm.n_prime));
+  node->get_parameter(sfm_ns + "n_prime", sfm.n_prime);
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "relaxation_time",
+                                               rclcpp::ParameterValue(sfm.relaxation_time));
+  node->get_parameter(sfm_ns + "relaxation_time", sfm.relaxation_time);
+  nav2_util::declare_parameter_if_not_declared(node, sfm_ns + "force_factor_social",
+                                               rclcpp::ParameterValue(sfm.force_factor_social));
+  node->get_parameter(sfm_ns + "force_factor_social", sfm.force_factor_social);
+
+  // ORCA parameters used to PREDICT the humans. Defaults mirror the simulated crowd
+  // (hunav::OrcaParams time_horizon, the agent yaml radius, HuNavPlugin's robot radius)
+  // -- see OrcaPredictionParams.
+  const std::string orca_ns = local_name + "orca.";
+  nav2_util::declare_parameter_if_not_declared(node, orca_ns + "time_horizon",
+                                               rclcpp::ParameterValue(orca.time_horizon));
+  node->get_parameter(orca_ns + "time_horizon", orca.time_horizon);
+  nav2_util::declare_parameter_if_not_declared(node, orca_ns + "relaxation_time",
+                                               rclcpp::ParameterValue(orca.relaxation_time));
+  node->get_parameter(orca_ns + "relaxation_time", orca.relaxation_time);
+  nav2_util::declare_parameter_if_not_declared(node, orca_ns + "smoothing", rclcpp::ParameterValue(orca.smoothing));
+  node->get_parameter(orca_ns + "smoothing", orca.smoothing);
+  nav2_util::declare_parameter_if_not_declared(node, orca_ns + "agent_radius",
+                                               rclcpp::ParameterValue(orca.agent_radius));
+  node->get_parameter(orca_ns + "agent_radius", orca.agent_radius);
+  nav2_util::declare_parameter_if_not_declared(node, orca_ns + "robot_radius",
+                                               rclcpp::ParameterValue(orca.robot_radius));
+  node->get_parameter(orca_ns + "robot_radius", orca.robot_radius);
   nav2_util::declare_parameter_if_not_declared(node, local_name + "stationary_agent_velocity_bound",
                                                rclcpp::ParameterValue(0.1));
   nav2_util::declare_parameter_if_not_declared(node, local_name + "stationary_agent_speed_threshold",
@@ -183,6 +232,8 @@ void OptimizerParams::get(rclcpp_lifecycle::LifecycleNode* node, const std::stri
   node->get_parameter(local_name + "agent_track_timeout", agent_track_timeout);
   node->get_parameter(local_name + "agent_coast_decay_time", agent_coast_decay_time);
   node->get_parameter(local_name + "agent_association_radius", agent_association_radius);
+  node->get_parameter(local_name + "agent_speed_window", agent_speed_window);
+  node->get_parameter(local_name + "human_cooperation_factor", human_cooperation_factor);
   node->get_parameter(local_name + "stationary_agent_velocity_bound", stationary_agent_velocity_bound);
   node->get_parameter(local_name + "stationary_agent_speed_threshold", stationary_agent_speed_threshold);
   node->get_parameter(local_name + "goal_proximity_activation_radius", goal_proximity_activation_radius_);
@@ -257,6 +308,11 @@ void Optimizer::initialize(const OptimizerParams params)
   agent_track_timeout_ = params.agent_track_timeout;
   agent_coast_decay_time_ = params.agent_coast_decay_time;
   agent_association_radius_ = params.agent_association_radius;
+  agent_speed_window_ = static_cast<size_t>(std::max(1, params.agent_speed_window));
+  human_cooperation_factor_ = std::clamp(params.human_cooperation_factor, 0.0, 1.0);
+  sfm_params_ = params.sfm;
+  orca_params_ = params.orca;
+  background_agent_w_ = params.background_agent_weight;
   stationary_agent_velocity_bound_ = params.stationary_agent_velocity_bound;
   stationary_agent_speed_threshold_ = params.stationary_agent_speed_threshold;
   if (debug_)
@@ -302,7 +358,7 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   const geometry_msgs::msg::Pose goal_pose_in = goal_pose.pose;
 
   // Transform people detections into tracked agent states. Lost agents coast for a short timeout.
-  AgentsStates init_people = people_to_status(people, time_step);
+  AgentsStates init_people = people_to_status(people, time_step, path.poses[0].pose, speed);
 
   // Create costmap grid
   costmap_grid_ = std::make_shared<ceres::Grid2D<u_char>>(costmap->getCharMap(), 0, costmap->getSizeInCellsY(), 0,
@@ -526,14 +582,16 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
           agent_dynamics_function_f =
               AgentOrcaDynamicsCost::Create(agent_sfm_dynamics_w_, agent_max_accel_, people_states_for_cost,
                                             evolving_poses[0].pose, i, time_step, control_horizon, block_length,
-                                            active_blocks, has_agent_parameters, num_agents);
+                                            active_blocks, has_agent_parameters, num_agents, agent_cooperation_,
+                                            orca_params_);
         }
         else
         {
           agent_dynamics_function_f =
               AgentSfmDynamicsCost::Create(agent_sfm_dynamics_w_, agent_max_accel_, people_states_for_cost,
                                            evolving_poses[0].pose, i, time_step, control_horizon, block_length,
-                                           active_blocks, has_agent_parameters, num_agents);
+                                           active_blocks, has_agent_parameters, num_agents, agent_cooperation_,
+                                           sfm_params_);
         }
         add_enlarged_parameter_blocks(agent_dynamics_function_f, active_blocks, has_agent_parameters, num_agents);
         agent_dynamics_function_f->SetNumResiduals(kAgentVelocityParamStride * num_agents);
@@ -574,6 +632,28 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
 
     problem.AddResidualBlock(velocity_function_f, NULL, robot_parameter_blocks);
     problem.AddResidualBlock(goal_align_cost_function_f, NULL, robot_parameter_blocks);
+
+    // Humans beyond max_agents: constant-velocity extrapolated to this step and fed to the
+    // robot-blocks-only ProxemicsCost. They are constants here, so they add one residual and
+    // ZERO decision variables -- the enlarged state (and therefore the solve cost that
+    // max_agents is capping) is untouched. Non-reactive by construction, which is exactly
+    // right for `cv` humans and a sane short-horizon approximation for the rest.
+    if (background_agent_w_ > 0.0 && !background_agents_.empty())
+    {
+      const double t = static_cast<double>(i) * time_step;
+      AgentsStates projected = background_agents_;
+      for (auto& a : projected)
+      {
+        a[kStateX] += a[kStateLinearVelocity] * std::cos(a[kStateYaw]) * t;
+        a[kStateY] += a[kStateLinearVelocity] * std::sin(a[kStateYaw]) * t;
+      }
+      auto* background_cost_function_f = ProxemicsCost::Create(
+          background_agent_w_, projected, evolving_poses[0].pose, counter_step, i, time_step, control_horizon,
+          block_length);
+      add_robot_parameter_blocks(background_cost_function_f, active_blocks);
+      background_cost_function_f->SetNumResiduals(1);
+      problem.AddResidualBlock(background_cost_function_f, NULL, robot_parameter_blocks);
+    }
 
     // add the obstacle cost function, which is used to avoid obstacles
     // the obstacle cost function is used to avoid obstacles, it takes the costmap and the interpolator as parameters
@@ -661,6 +741,34 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   }
   ceres::Solve(options_, &problem, &summary);
   RCLCPP_DEBUG_STREAM(rclcpp::get_logger("optimizer"), "Brief report: " << summary.BriefReport() << std::endl);
+
+  if (debug_)
+  {
+    // One line per solve: everything needed to decide whether the control rate is limited by
+    // the linear solver, by the iteration cap, or by the size of the enlarged state.
+    // hit_iter_cap=1 means max_iterations bound the solve (pure wasted time if it had converged).
+    const bool hit_iter_cap = summary.iterations.size() >= static_cast<size_t>(options_.max_num_iterations);
+    // Autodiff tax = per-call Jacobian-eval cost / per-call residual-eval cost. Jacobian evals
+    // run once per iteration; residual (cost-only) evals run more often in the line search, so
+    // both times must be normalised by their own call counts before dividing. This ratio is the
+    // ceiling analytic Jacobians could remove: tax->~1.5-2x instead of whatever this prints.
+    const double jac_per_call = summary.num_jacobian_evaluations > 0 ?
+        summary.jacobian_evaluation_time_in_seconds / summary.num_jacobian_evaluations : 0.0;
+    const double res_per_call = summary.num_residual_evaluations > 0 ?
+        summary.residual_evaluation_time_in_seconds / summary.num_residual_evaluations : 0.0;
+    RCLCPP_INFO(rclcpp::get_logger("optimizer"),
+                "[solve] %.1f ms (max %.1f Hz) | solver=%s | iters=%zu hit_iter_cap=%d | params=%d residuals=%d | "
+                "agents=%u background=%zu | linsolve=%.1f ms jacobian=%.1f ms residual=%.1f ms | "
+                "jac_evals=%d res_evals=%d autodiff_tax=%.1fx",
+                summary.total_time_in_seconds * 1e3,
+                summary.total_time_in_seconds > 0.0 ? 1.0 / summary.total_time_in_seconds : 0.0,
+                ceres::LinearSolverTypeToString(options_.linear_solver_type), summary.iterations.size(),
+                hit_iter_cap ? 1 : 0, problem.NumParameters(), problem.NumResiduals(), num_agents,
+                background_agents_.size(), summary.linear_solver_time_in_seconds * 1e3,
+                summary.jacobian_evaluation_time_in_seconds * 1e3,
+                summary.residual_evaluation_time_in_seconds * 1e3, summary.num_jacobian_evaluations,
+                summary.num_residual_evaluations, res_per_call > 0.0 ? jac_per_call / res_per_call : 0.0);
+  }
 
   if (!summary.IsSolutionUsable())
   {
@@ -780,7 +888,43 @@ bool Optimizer::optimize(nav_msgs::msg::Path& path, AgentsTrajectories& people_p
   return true;
 }
 
-AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people, double time_step)
+double Optimizer::agent_relevance(const AgentStatus& agent, const geometry_msgs::msg::Pose& robot_pose,
+                                  const geometry_msgs::msg::Twist& speed) const
+{
+  // Relative state of the agent with respect to the robot.
+  const double px = agent[kStateX] - robot_pose.position.x;
+  const double py = agent[kStateY] - robot_pose.position.y;
+
+  const double robot_yaw = tf2::getYaw(robot_pose.orientation);
+  const double vx = agent[kStateLinearVelocity] * std::cos(agent[kStateYaw]) - speed.linear.x * std::cos(robot_yaw);
+  const double vy = agent[kStateLinearVelocity] * std::sin(agent[kStateYaw]) - speed.linear.x * std::sin(robot_yaw);
+
+  // Closest point of approach under constant velocity, clamped to the MPC horizon: an agent that
+  // is far but closing fast outranks a closer one that is walking away or already behind the robot.
+  const double speed_sq = vx * vx + vy * vy;
+  double t_cpa = 0.0;
+  if (speed_sq > 1e-9)
+  {
+    t_cpa = std::clamp(-(px * vx + py * vy) / speed_sq, 0.0, static_cast<double>(max_time));
+  }
+
+  const double dx = px + vx * t_cpa;
+  const double dy = py + vy * t_cpa;
+  return std::sqrt(dx * dx + dy * dy);
+}
+
+void Optimizer::update_cooperation(TrackedAgent& track, const geometry_msgs::msg::Pose& robot_pose)
+{
+  // ponytail: constant prior, no online estimation. The track already carries the
+  // history needed to infer this (did the person deviate as the robot closed in?);
+  // upgrade to a per-agent posterior when a fixed prior provably is not enough.
+  (void)track;
+  (void)robot_pose;
+}
+
+AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people, double time_step,
+                                         const geometry_msgs::msg::Pose& robot_pose,
+                                         const geometry_msgs::msg::Twist& speed)
 {
   const size_t cap = max_agents_ > 0 ? max_agents_ : std::numeric_limits<size_t>::max();
   double current_time = path_time_.seconds();
@@ -813,14 +957,9 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
   }
 
   AgentsStates detections;
-  detections.reserve(std::min(cap, people.people.size()));
+  detections.reserve(people.people.size());
   for (const auto& p : people.people)
   {
-    if (detections.size() >= cap)
-    {
-      break;
-    }
-
     double yaw = atan2(p.velocity.y, p.velocity.x);
     double lv = sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y);
     AgentStatus st;
@@ -855,17 +994,32 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
       }
     }
 
+    // Take the fastest speed the person has shown over the window rather than the
+    // latest sample: an under-read speed makes the SFM prediction lag behind where
+    // they will actually be, which is the direction that ends in a collision.
+    auto apply_speed_window = [this](TrackedAgent& track, const AgentStatus& detection) {
+      track.state = detection;
+      track.speed_window.push_back(detection[kStateLinearVelocity]);
+      while (track.speed_window.size() > agent_speed_window_)
+      {
+        track.speed_window.pop_front();
+      }
+      track.state[kStateLinearVelocity] =
+          *std::max_element(track.speed_window.begin(), track.speed_window.end());
+    };
+
     if (best_track < tracked_agents_.size())
     {
-      tracked_agents_[best_track].state = detection;
+      apply_speed_window(tracked_agents_[best_track], detection);
       tracked_agents_[best_track].last_seen_time = current_time;
       tracked_agents_[best_track].last_update_time = current_time;
       matched_tracks[best_track] = true;
     }
-    else if (tracked_agents_.size() < cap)
+    else
     {
       TrackedAgent track;
-      track.state = detection;
+      apply_speed_window(track, detection);
+      track.cooperation = human_cooperation_factor_;
       track.last_seen_time = current_time;
       track.last_update_time = current_time;
       tracked_agents_.push_back(track);
@@ -880,16 +1034,38 @@ AgentsStates Optimizer::people_to_status(const people_msgs::msg::People& people,
                      }),
       tracked_agents_.end());
 
-  AgentsStates people_status;
-  people_status.reserve(std::min(cap, tracked_agents_.size()));
   for (auto& track : tracked_agents_)
   {
-    if (people_status.size() >= cap)
-    {
-      break;
-    }
     track.state[kStateTime] = std::max(0.0, current_time - track.last_seen_time);
-    people_status.push_back(track.state);
+  }
+
+  // Rank the tracks by interaction relevance so that, when max_agents truncates the enlarged
+  // state, the agents that survive are the ones the robot actually has to negotiate with.
+  std::sort(tracked_agents_.begin(), tracked_agents_.end(),
+            [this, &robot_pose, &speed](const TrackedAgent& a, const TrackedAgent& b) {
+              return agent_relevance(a.state, robot_pose, speed) < agent_relevance(b.state, robot_pose, speed);
+            });
+
+  AgentsStates people_status;
+  const size_t kept = std::min(cap, tracked_agents_.size());
+  people_status.reserve(kept);
+  agent_cooperation_.clear();
+  agent_cooperation_.reserve(kept);
+  for (size_t i = 0; i < kept; ++i)
+  {
+    update_cooperation(tracked_agents_[i], robot_pose);
+    people_status.push_back(tracked_agents_[i].state);
+    agent_cooperation_.push_back(tracked_agents_[i].cooperation);
+  }
+
+  // Everyone the cap truncated away. They stay out of the enlarged state (no decision
+  // variables, never co-optimized) but are still handed to a proxemics residual so the robot
+  // is not blind to them -- see background_agent_w_.
+  background_agents_.clear();
+  background_agents_.reserve(tracked_agents_.size() - kept);
+  for (size_t i = kept; i < tracked_agents_.size(); ++i)
+  {
+    background_agents_.push_back(tracked_agents_[i].state);
   }
 
   last_tracking_time_ = current_time;

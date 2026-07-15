@@ -54,7 +54,7 @@ namespace mpc_enlarged_state
 class VelocityCost
 {
 public:
-  using VelocityCostFunction = ceres::DynamicAutoDiffCostFunction<VelocityCost>;
+  using VelocityCostFunction = ceres::DynamicAutoDiffCostFunction<VelocityCost, /*Jet stride=*/16>;
   VelocityCost(
     double weight, double desired_linear_vel, unsigned int current_position,
     unsigned int control_horizon, unsigned int block_length);

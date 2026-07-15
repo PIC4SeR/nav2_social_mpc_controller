@@ -57,7 +57,7 @@ namespace mpc_enlarged_state
 class DistanceCost
 {
 public:
-  using DistanceCostFunction = ceres::DynamicAutoDiffCostFunction<DistanceCost>;
+  using DistanceCostFunction = ceres::DynamicAutoDiffCostFunction<DistanceCost, /*Jet stride=*/16>;
   /**
     * @brief Constructor for the DistanceCost.
     *

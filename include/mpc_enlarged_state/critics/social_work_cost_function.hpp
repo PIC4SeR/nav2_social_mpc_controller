@@ -44,7 +44,7 @@ class SocialWorkCost
    * the robot and the agents, and calculates the residuals based on these forces.
    */
 public:
-  using SocialWorkCostFunction = ceres::DynamicAutoDiffCostFunction<SocialWorkCost>;
+  using SocialWorkCostFunction = ceres::DynamicAutoDiffCostFunction<SocialWorkCost, /*Jet stride=*/16>;
 
   SocialWorkCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                  const double counter, unsigned int current_position, double time_step, unsigned int control_horizon,

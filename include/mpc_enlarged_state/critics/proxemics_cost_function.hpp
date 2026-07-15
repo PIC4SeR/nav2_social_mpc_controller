@@ -36,7 +36,7 @@ class ProxemicsCost
    * with respect to other agents in the environment.
    */
 public:
-  using ProxemicsCostFunction = ceres::DynamicAutoDiffCostFunction<ProxemicsCost>;
+  using ProxemicsCostFunction = ceres::DynamicAutoDiffCostFunction<ProxemicsCost, /*Jet stride=*/16>;
 
   ProxemicsCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                 const double counter, unsigned int current_position, double time_step, unsigned int control_horizon,

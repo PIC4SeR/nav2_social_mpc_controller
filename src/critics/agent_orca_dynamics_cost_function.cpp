@@ -25,7 +25,8 @@ AgentOrcaDynamicsCost::AgentOrcaDynamicsCost(double weight, double max_accel, co
                                              unsigned int current_position, double time_step,
                                              unsigned int control_horizon, unsigned int block_length,
                                              unsigned int parameter_block_count, bool has_agent_parameters,
-                                             unsigned int agent_count)
+                                             unsigned int agent_count, const std::vector<double>& cooperation,
+                                             const OrcaPredictionParams& orca)
   : sqrt_weight_(std::sqrt(std::max(0.0, weight)))
   , max_accel_(max_accel)
   , agents_init_(agents_init)
@@ -39,12 +40,22 @@ AgentOrcaDynamicsCost::AgentOrcaDynamicsCost(double weight, double max_accel, co
   , agent_count_(agent_count)
   , reference_velocities_(kAgentVelocityParamStride * agent_count, 0.0)
   , active_agents_(agent_count, false)
-  , orca_time_horizon_(2.0)
-  , orca_relaxation_time_(0.5)
-  , orca_smoothing_(0.05)
-  , agent_radius_(0.35)
-  , robot_radius_(0.35)
+  , cooperation_(agent_count, 1.0)
+  , orca_time_horizon_(orca.time_horizon)
+  , orca_relaxation_time_(orca.relaxation_time)
+  , orca_smoothing_(orca.smoothing)
+  , agent_radius_(orca.agent_radius)
+  , robot_radius_(orca.robot_radius)
 {
+  // Agents beyond what the caller supplied keep the 1.0 default, so a short (or
+  // empty) cooperation vector degrades to standard fully-reciprocal ORCA.
+  const unsigned int scored_agents =
+      std::min(agent_count_, static_cast<unsigned int>(cooperation.size()));
+  for (unsigned int agent_idx = 0; agent_idx < scored_agents; ++agent_idx)
+  {
+    cooperation_[agent_idx] = cooperation[agent_idx];
+  }
+
   const unsigned int tracked_agents =
       std::min(agent_count_, static_cast<unsigned int>(agents_init_.size()));
   for (unsigned int agent_idx = 0; agent_idx < tracked_agents; ++agent_idx)

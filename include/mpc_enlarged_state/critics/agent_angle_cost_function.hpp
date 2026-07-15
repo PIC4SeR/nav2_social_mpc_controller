@@ -82,7 +82,7 @@ class AgentAngleCost
    * - agents_init_: List of initial statuses (poses, velocities, etc.) of the agents.
    */
 public:
-  using AgentAngleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentAngleCost>;
+  using AgentAngleCostFunction = ceres::DynamicAutoDiffCostFunction<AgentAngleCost, /*Jet stride=*/16>;
   AgentAngleCost(double weight, const AgentsStates& agents_init, const geometry_msgs::msg::Pose& robot_init,
                  unsigned int current_position, double time_step, unsigned int control_horizon,
                  unsigned int block_length);

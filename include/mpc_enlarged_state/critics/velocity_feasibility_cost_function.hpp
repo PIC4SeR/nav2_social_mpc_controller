@@ -109,7 +109,7 @@ private:
 class AgentVelocityFeasibilityCost
 {
 public:
-  using AgentVelocityFeasibilityCostFunction = ceres::DynamicAutoDiffCostFunction<AgentVelocityFeasibilityCost>;
+  using AgentVelocityFeasibilityCostFunction = ceres::DynamicAutoDiffCostFunction<AgentVelocityFeasibilityCost, /*Jet stride=*/16>;
 
   AgentVelocityFeasibilityCost(double weight, unsigned int current_position, unsigned int control_horizon,
                                unsigned int agent_count);

@@ -30,12 +30,13 @@ namespace mpc_enlarged_state
 class AgentSfmDynamicsCost
 {
 public:
-  using AgentSfmDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentSfmDynamicsCost>;
+  using AgentSfmDynamicsCostFunction = ceres::DynamicAutoDiffCostFunction<AgentSfmDynamicsCost, /*Jet stride=*/16>;
 
   AgentSfmDynamicsCost(double weight, double max_accel, const AgentsStates& agents_init,
                        const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,
                        unsigned int control_horizon, unsigned int block_length, unsigned int parameter_block_count,
-                       bool has_agent_parameters, unsigned int agent_count);
+                       bool has_agent_parameters, unsigned int agent_count,
+                       const std::vector<double>& cooperation, const SfmPredictionParams& sfm);
 
   inline static AgentSfmDynamicsCostFunction* Create(double weight, double max_accel,
                                                      const AgentsStates& agents_init,
@@ -43,12 +44,14 @@ public:
                                                      unsigned int current_position, double time_step,
                                                      unsigned int control_horizon, unsigned int block_length,
                                                      unsigned int parameter_block_count, bool has_agent_parameters,
-                                                     unsigned int agent_count)
+                                                     unsigned int agent_count,
+                                                     const std::vector<double>& cooperation,
+                                                     const SfmPredictionParams& sfm)
   {
     return new AgentSfmDynamicsCostFunction(
         new AgentSfmDynamicsCost(weight, max_accel, agents_init, robot_init, current_position, time_step,
                                  control_horizon, block_length, parameter_block_count, has_agent_parameters,
-                                 agent_count));
+                                 agent_count, cooperation, sfm));
   }
 
   template <typename T>
@@ -131,7 +134,12 @@ private:
       const Eigen::Matrix<T, kStateSize, Eigen::Dynamic>& agents, const T* const current_agent_block,
       unsigned int agent_idx) const
   {
-    Eigen::Matrix<T, 2, 1> acceleration = computePairwiseSocialForce(agent_position, agent_velocity,
+    // How much this particular person is predicted to yield to the robot: 1.0 keeps
+    // the classic assumption that they socially avoid us like any other pedestrian,
+    // 0.0 predicts them holding their course as if the robot were not there. Only
+    // the robot's force is scaled -- people still avoid each other regardless.
+    Eigen::Matrix<T, 2, 1> acceleration = T(cooperation_[agent_idx]) *
+                                          computePairwiseSocialForce(agent_position, agent_velocity,
                                                                       robot_position, robot_velocity);
     for (unsigned int other_idx = 0; other_idx < agent_count_; ++other_idx)
     {
@@ -211,6 +219,7 @@ private:
   unsigned int agent_count_;
   std::vector<double> reference_velocities_;
   std::vector<bool> active_agents_;
+  std::vector<double> cooperation_;
   double sfm_lambda_;
   double sfm_gamma_;
   double sfm_n_prime_;

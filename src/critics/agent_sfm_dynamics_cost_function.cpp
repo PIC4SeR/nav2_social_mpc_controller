@@ -25,7 +25,8 @@ AgentSfmDynamicsCost::AgentSfmDynamicsCost(double weight, double max_accel, cons
                                            unsigned int current_position, double time_step,
                                            unsigned int control_horizon, unsigned int block_length,
                                            unsigned int parameter_block_count, bool has_agent_parameters,
-                                           unsigned int agent_count)
+                                           unsigned int agent_count, const std::vector<double>& cooperation,
+                                           const SfmPredictionParams& sfm)
   : sqrt_weight_(std::sqrt(std::max(0.0, weight)))
   , max_accel_(max_accel)
   , agents_init_(agents_init)
@@ -39,15 +40,25 @@ AgentSfmDynamicsCost::AgentSfmDynamicsCost(double weight, double max_accel, cons
   , agent_count_(agent_count)
   , reference_velocities_(kAgentVelocityParamStride * agent_count, 0.0)
   , active_agents_(agent_count, false)
-  , sfm_lambda_(2.0)
-  , sfm_gamma_(0.35)
-  , sfm_n_prime_(3.0)
-  , sfm_n_(2.0)
-  , sfm_relaxation_time_(0.5)
-  , sfm_force_factor_social_(2.1)
+  , cooperation_(agent_count, 1.0)
+  , sfm_lambda_(sfm.lambda)
+  , sfm_gamma_(sfm.gamma)
+  , sfm_n_prime_(sfm.n_prime)
+  , sfm_n_(sfm.n)
+  , sfm_relaxation_time_(sfm.relaxation_time)
+  , sfm_force_factor_social_(sfm.force_factor_social)
 {
   const unsigned int tracked_agents =
       std::min(agent_count_, static_cast<unsigned int>(agents_init_.size()));
+  // Agents beyond what the caller supplied keep the 1.0 default, so a short (or
+  // empty) cooperation vector degrades to the classic fully-cooperative prediction.
+  const unsigned int scored_agents =
+      std::min(agent_count_, static_cast<unsigned int>(cooperation.size()));
+  for (unsigned int agent_idx = 0; agent_idx < scored_agents; ++agent_idx)
+  {
+    cooperation_[agent_idx] = cooperation[agent_idx];
+  }
+
   for (unsigned int agent_idx = 0; agent_idx < tracked_agents; ++agent_idx)
   {
     const auto& agent = agents_init_[agent_idx];

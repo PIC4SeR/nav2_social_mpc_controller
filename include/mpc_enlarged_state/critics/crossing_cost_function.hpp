@@ -29,7 +29,7 @@ namespace mpc_enlarged_state
 class CrossingCost
 {
 public:
-  using CrossingCostFunction = ceres::DynamicAutoDiffCostFunction<CrossingCost>;
+  using CrossingCostFunction = ceres::DynamicAutoDiffCostFunction<CrossingCost, /*Jet stride=*/16>;
 
   CrossingCost(double weight, double bearing_weight, const AgentsStates& agents_init,
                const geometry_msgs::msg::Pose& robot_init, unsigned int current_position, double time_step,

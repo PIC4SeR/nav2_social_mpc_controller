@@ -135,6 +135,11 @@ struct OptimizerParams
   double agent_track_timeout;
   double agent_coast_decay_time;
   double agent_association_radius;
+  int agent_speed_window;
+  double human_cooperation_factor;
+  SfmPredictionParams sfm;
+  OrcaPredictionParams orca;
+  double background_agent_weight;
   double stationary_agent_velocity_bound;
   double stationary_agent_speed_threshold;
 };
@@ -256,9 +261,19 @@ private:
   /**
    * @brief Convert people messages to agent status
    * @param people People messages
-   * @return Vector of agent statuses
+   * @param robot_pose Current robot pose, used to rank agents by interaction relevance
+   * @param speed Current robot speed, used to rank agents by interaction relevance
+   * @return Vector of agent statuses, most relevant first, truncated to max_agents
    */
-  AgentsStates people_to_status(const people_msgs::msg::People& people, double time_step);
+  AgentsStates people_to_status(const people_msgs::msg::People& people, double time_step,
+                                const geometry_msgs::msg::Pose& robot_pose, const geometry_msgs::msg::Twist& speed);
+
+  /**
+   * @brief Relevance score of an agent: predicted closest distance to the robot over the
+   * MPC horizon under constant velocity. Lower is more relevant.
+   */
+  double agent_relevance(const AgentStatus& agent, const geometry_msgs::msg::Pose& robot_pose,
+                         const geometry_msgs::msg::Twist& speed) const;
 
   /**
    * @brief Format path and commands for optimization
@@ -284,7 +299,20 @@ private:
     AgentStatus state;
     double last_seen_time{0.0};
     double last_update_time{0.0};
+    // Recent observed speeds; the track reports their max, so a person who briefly
+    // reads as slow (occlusion, a noisy detection) is still predicted at the pace
+    // they have actually been walking.
+    std::deque<double> speed_window;
+    // How much this person is predicted to yield to the robot (see
+    // AgentSfmDynamicsCost). Per-agent rather than global because a crowd is a
+    // mixture: some people negotiate, some walk straight through you.
+    double cooperation{1.0};
   };
+
+  // Hook for revising a track's cooperation from what we have actually observed it
+  // do (did it deviate when the robot closed in?). Currently a no-op: every track
+  // keeps the human_cooperation_factor prior it was born with.
+  void update_cooperation(TrackedAgent& track, const geometry_msgs::msg::Pose& robot_pose);
 
   bool debug_;
   unsigned int control_horizon_;
@@ -332,6 +360,19 @@ private:
   double agent_track_timeout_;
   double agent_coast_decay_time_;
   double agent_association_radius_;
+  size_t agent_speed_window_;
+  double human_cooperation_factor_;
+  // Per-agent cooperation, aligned with the AgentsStates returned by people_to_status.
+  std::vector<double> agent_cooperation_;
+  SfmPredictionParams sfm_params_;
+  OrcaPredictionParams orca_params_;
+  // The humans that max_agents truncated away. They are NOT part of the enlarged state --
+  // they carry no decision variables and are never co-optimized -- but they are still
+  // constant-velocity extrapolated and fed to a proxemics residual over the robot blocks,
+  // so a crowd bigger than max_agents does not go completely unseen. Cheap: adds residuals,
+  // not parameters.
+  AgentsStates background_agents_;
+  double background_agent_w_;
   double stationary_agent_velocity_bound_;
   double stationary_agent_speed_threshold_;
   ceres::Solver::Options options_;

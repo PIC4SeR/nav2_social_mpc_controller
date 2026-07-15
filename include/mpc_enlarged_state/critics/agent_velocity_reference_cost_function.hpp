@@ -26,7 +26,7 @@ namespace mpc_enlarged_state
 class AgentVelocityReferenceCost
 {
 public:
-  using AgentVelocityReferenceCostFunction = ceres::DynamicAutoDiffCostFunction<AgentVelocityReferenceCost>;
+  using AgentVelocityReferenceCostFunction = ceres::DynamicAutoDiffCostFunction<AgentVelocityReferenceCost, /*Jet stride=*/16>;
 
   AgentVelocityReferenceCost(double weight, const AgentsStates& agents_init, unsigned int agent_count);
 

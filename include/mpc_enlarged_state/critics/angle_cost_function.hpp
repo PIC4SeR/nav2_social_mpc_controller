@@ -50,7 +50,7 @@ namespace mpc_enlarged_state
 class AngleCost
 {
 public:
-  using AngleCostFunction = ceres::DynamicAutoDiffCostFunction<AngleCost>;
+  using AngleCostFunction = ceres::DynamicAutoDiffCostFunction<AngleCost, /*Jet stride=*/16>;
   AngleCost(
     double weight, const Eigen::Matrix<double, 2, 1> point,
     const geometry_msgs::msg::Pose & robot_init, unsigned int current_position, double time_step,
